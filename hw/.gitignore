@@ -1,3 +1,9 @@
 .project
 .dvt
 vendor
+ip/common_cells
+ip/common_verification
+ip/fpnew
+ip/fpu_div_sqrt_mvp
+ip/axi
+ip/tech_cells_generic
