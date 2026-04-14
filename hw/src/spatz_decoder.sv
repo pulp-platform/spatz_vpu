@@ -855,6 +855,16 @@ module spatz_decoder
         spatz_riscv_instr::VFMIN_VF,
         spatz_riscv_instr::VFMAX_VV,
         spatz_riscv_instr::VFMAX_VF,
+        spatz_riscv_instr::VMFEQ_VV,
+        spatz_riscv_instr::VMFEQ_VF,
+        spatz_riscv_instr::VMFNE_VV,
+        spatz_riscv_instr::VMFNE_VF,
+        spatz_riscv_instr::VMFLT_VV,
+        spatz_riscv_instr::VMFLT_VF,
+        spatz_riscv_instr::VMFLE_VV,
+        spatz_riscv_instr::VMFLE_VF,
+        spatz_riscv_instr::VMFGT_VF,
+        spatz_riscv_instr::VMFGE_VF,
         spatz_riscv_instr::VFSGNJ_VV,
         spatz_riscv_instr::VFSGNJ_VF,
         spatz_riscv_instr::VFSGNJN_VV,
@@ -976,6 +986,51 @@ module spatz_decoder
               spatz_riscv_instr::VFMAX_VF: begin
                 spatz_req.op = VFMINMAX;
                 spatz_req.rm = fpnew_pkg::RTZ;
+              end
+
+              spatz_riscv_instr::VMFEQ_VV,
+              spatz_riscv_instr::VMFEQ_VF: begin
+                spatz_req.op = VFCMP;
+                spatz_req.rm = fpnew_pkg::RDN;
+              end
+
+              spatz_riscv_instr::VMFNE_VV,
+              spatz_riscv_instr::VMFNE_VF: begin
+                spatz_req.op = VFCMP;
+                spatz_req.rm = fpnew_pkg::RUP;
+              end
+
+              spatz_riscv_instr::VMFLT_VV,
+              spatz_riscv_instr::VMFLT_VF: begin
+                spatz_req.op = VFCMP;
+                spatz_req.rm = fpnew_pkg::RTZ;
+              end
+
+              spatz_riscv_instr::VMFGT_VF: begin
+                spatz_req.op = VFCMP;
+                spatz_req.rm = fpnew_pkg::RTZ;
+                //Switch the operands
+                spatz_req.vs2     = arith_s2;
+                spatz_req.use_vs2 = 1'b1;
+                spatz_req.rs1     = decoder_req_i.rs1;
+                spatz_req.use_vs1 = 1'b0;
+
+              end
+
+              spatz_riscv_instr::VMFLE_VV,
+              spatz_riscv_instr::VMFLE_VF: begin
+                spatz_req.op = VFCMP;
+                spatz_req.rm = fpnew_pkg::RNE;
+              end
+
+              spatz_riscv_instr::VMFGE_VF: begin
+                spatz_req.op = VFCMP;
+                spatz_req.rm = fpnew_pkg::RNE;
+                //Switch the operands
+                spatz_req.vs2     = arith_s2;
+                spatz_req.use_vs2 = 1'b1;
+                spatz_req.rs1     = decoder_req_i.rs1;
+                spatz_req.use_vs1 = 1'b0;
               end
 
               spatz_riscv_instr::VFMUL_VV,
