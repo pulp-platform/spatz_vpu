@@ -26,6 +26,12 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     parameter type                          spatz_issue_req_t   = logic,
     parameter type                          spatz_issue_rsp_t   = logic,
     parameter type                          spatz_rsp_t         = logic,
+    // X-Interface (used when X_INTERFACE is defined; harmless otherwise)
+    parameter type                          x_issue_req_t       = logic,
+    parameter type                          x_issue_resp_t      = logic,
+    parameter type                          x_register_t        = logic,
+    parameter type                          x_commit_t          = logic,
+    parameter type                          x_result_t          = logic,
     /// FPU configuration.
     parameter fpu_implementation_t          FPUImplementation   = fpu_implementation_t'(0),
     // Derived parameters. DO NOT CHANGE!
@@ -35,6 +41,21 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     input  logic                              rst_ni,
     input  logic                              testmode_i,
     input  logic             [31:0]           hart_id_i,
+`ifdef X_INTERFACE
+    // X-Interface
+    input  logic                              x_issue_valid_i,
+    output logic                              x_issue_ready_o,
+    input  x_issue_req_t                      x_issue_req_i,
+    output x_issue_resp_t                     x_issue_resp_o,
+    input  logic                              x_register_valid_i,
+    output logic                              x_register_ready_o,
+    input  x_register_t                       x_register_i,
+    input  logic                              x_commit_valid_i,
+    input  x_commit_t                         x_commit_i,
+    output logic                              x_result_valid_o,
+    input  logic                              x_result_ready_i,
+    output x_result_t                         x_result_o,
+`else
     // Snitch Interface
     input  logic                              issue_valid_i,
     output logic                              issue_ready_o,
@@ -43,6 +64,7 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     output logic                              rsp_valid_o,
     input  logic                              rsp_ready_i,
     output spatz_rsp_t                        rsp_o,
+`endif
     // Memory Request
     output spatz_mem_req_t   [NrMemPorts-1:0] spatz_mem_req_o,
     output logic             [NrMemPorts-1:0] spatz_mem_req_valid_o,
@@ -150,16 +172,127 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   assign spatz_mem_finished_o     = {spatz_mem_finished, fp_lsu_mem_finished};
   assign spatz_mem_str_finished_o = {spatz_mem_str_finished, fp_lsu_mem_str_finished};
 
+  /////////////////////////////
+  //  Top-boundary acc bus   //
+  /////////////////////////////
+  // Acc-shaped signals at the top boundary. The FPU sequencer (and the
+  // FPU-less bypass) consume these instead of the top-level ports directly.
+  //   - In acc mode: aliased to the top-level acc ports.
+  //   - In X mode:   produced/consumed by the X-to-acc converter below.
+
+  spatz_issue_req_t acc_issue_req_top;
+  logic             acc_issue_valid_top;
+  logic             acc_issue_ready_top;
+  spatz_issue_rsp_t acc_issue_rsp_top;
+  spatz_rsp_t       acc_rsp_top;
+  logic             acc_rsp_valid_top;
+  logic             acc_rsp_ready_top;
+
+`ifdef X_INTERFACE
+  //////////////////////////
+  //  X-to-acc converter  //
+  //////////////////////////
+  //
+  // The cluster's X-Interface variant sends the rs values (x_register channel)
+  // concurrently with the issue request (x_issue channel) instead of waiting
+  // for the accept response. The converter below combines x_issue + x_register
+  // into a single acc-shaped issue request.
+  //
+  // Result handling:
+  //   * accept=1, writeback=0 -> the X result is synthesized immediately at
+  //     issue handshake time (rd taken from instr[11:7], we=0). Spatz will
+  //     never produce an acc rsp for these instructions, so this is the only
+  //     retirement signal the host receives.
+  //   * accept=1, writeback=1 -> the synthesized result is suppressed. The X
+  //     result is forwarded from Spatz's acc rsp when it arrives.
+  //   * accept=0 -> no X result is produced; the host learns of the rejection
+  //     from x_issue_resp.accept.
+  //
+  // Arbitration: the synthesized path has priority over the acc rsp path.
+  // When the synthesized path is firing, acc_rsp_ready_top is held low so
+  // Spatz stalls its rsp; this avoids the need for a result FIFO.
+  //
+  // Commit channel: per cluster spec, the commit channel is assumed always-
+  // ready (no ready signal exists). commit_kill is not supported and the
+  // x_commit_* inputs are intentionally unused.
+
+  logic synth_result_valid;
+  logic combined_issue_valid;
+  logic issue_proceed;
+
+  always_comb begin
+    // --- Issue request (X -> acc) ------------------------------------------
+    acc_issue_req_top           = '0;
+    acc_issue_req_top.id        = x_issue_req_i.id;
+    acc_issue_req_top.data_op   = x_issue_req_i.instr;
+    acc_issue_req_top.data_arga = x_register_i.rs[0];
+    acc_issue_req_top.data_argb = x_register_i.rs[1];
+    acc_issue_req_top.data_argc = x_register_i.rs[2];
+    // acc_issue_req_top.addr is unused: Spatz is the only unit on the iface.
+
+    // --- Synthesized X-result for non-writeback instructions ---------------
+    combined_issue_valid = x_issue_valid_i & x_register_valid_i;
+    synth_result_valid   = combined_issue_valid
+                         & acc_issue_rsp_top.accept
+                         & ~acc_issue_rsp_top.writeback;
+
+    // --- Issue handshake ---------------------------------------------------
+    // Writeback instructions: proceed as soon as Spatz is ready.
+    // Non-writeback instructions: also require x_result to be ready, since
+    // the synthesized result must be consumed atomically with the issue.
+    issue_proceed       = acc_issue_rsp_top.writeback | x_result_ready_i;
+    acc_issue_valid_top = combined_issue_valid;
+    x_issue_ready_o     = acc_issue_ready_top & x_register_valid_i & issue_proceed;
+    x_register_ready_o  = acc_issue_ready_top & x_issue_valid_i    & issue_proceed;
+
+    // --- Issue response ----------------------------------------------------
+    x_issue_resp_o               = '0;
+    x_issue_resp_o.accept        = acc_issue_rsp_top.accept;
+    x_issue_resp_o.writeback     = acc_issue_rsp_top.writeback;
+    x_issue_resp_o.register_read = '1; // rs sent concurrently in this variant
+
+    // --- Result mux (synthesized path has priority) ------------------------
+    x_result_o        = '0;
+    if (synth_result_valid) begin
+      x_result_o.id   = x_issue_req_i.id;
+      x_result_o.rd   = x_issue_req_i.instr[11:7];
+      x_result_o.we   = 1'b0;
+      x_result_o.data = '0;
+    end else begin
+      x_result_o.id   = acc_rsp_top.id;
+      x_result_o.rd   = acc_rsp_top.id[4:0];
+      x_result_o.we   = 1'b1;
+      x_result_o.data = acc_rsp_top.data;
+    end
+    x_result_valid_o  = synth_result_valid | acc_rsp_valid_top;
+
+    // Hold back Spatz's rsp when the synthesized path is firing.
+    acc_rsp_ready_top = x_result_ready_i & ~synth_result_valid;
+  end
+
+  // Commit channel intentionally unused (no kill, no ready in this variant).
+
+`else
+  // acc mode: alias top-level acc ports onto the internal acc-shaped bus.
+  assign acc_issue_req_top   = issue_req_i;
+  assign acc_issue_valid_top = issue_valid_i;
+  assign issue_ready_o       = acc_issue_ready_top;
+  assign issue_rsp_o         = acc_issue_rsp_top;
+  assign rsp_o               = acc_rsp_top;
+  assign rsp_valid_o         = acc_rsp_valid_top;
+  assign acc_rsp_ready_top   = rsp_ready_i;
+`endif
+
   if (!FPU) begin: gen_no_fpu_sequencer
     // Spatz configured without an FPU. Just forward the requests to Spatz.
-    assign issue_req     = issue_req_i;
-    assign issue_valid   = issue_valid_i;
-    assign issue_ready_o = issue_ready;
-    assign issue_rsp_o   = issue_rsp;
+    assign issue_req           = acc_issue_req_top;
+    assign issue_valid         = acc_issue_valid_top;
+    assign acc_issue_ready_top = issue_ready;
+    assign acc_issue_rsp_top   = issue_rsp;
 
-    assign rsp_o       = resp;
-    assign rsp_valid_o = resp_valid;
-    assign resp_ready  = rsp_ready_i;
+    assign acc_rsp_top         = resp;
+    assign acc_rsp_valid_top   = resp_valid;
+    assign resp_ready          = acc_rsp_ready_top;
 
     // Tie the memory interface to zero
     assign fp_lsu_mem_req_o        = '0;
@@ -180,14 +313,14 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     ) i_fpu_sequencer (
       .clk_i                    ( clk_i                  ),
       .rst_ni                   ( rst_ni                 ),
-      // Snitch interface
-      .issue_req_i              ( issue_req_i            ),
-      .issue_valid_i            ( issue_valid_i          ),
-      .issue_ready_o            ( issue_ready_o          ),
-      .issue_rsp_o              ( issue_rsp_o            ),
-      .resp_o                   ( rsp_o                  ),
-      .resp_valid_o             ( rsp_valid_o            ),
-      .resp_ready_i             ( rsp_ready_i            ),
+      // Snitch interface (acc-shaped, sourced from top boundary bus)
+      .issue_req_i              ( acc_issue_req_top      ),
+      .issue_valid_i            ( acc_issue_valid_top    ),
+      .issue_ready_o            ( acc_issue_ready_top    ),
+      .issue_rsp_o              ( acc_issue_rsp_top      ),
+      .resp_o                   ( acc_rsp_top            ),
+      .resp_valid_o             ( acc_rsp_valid_top      ),
+      .resp_ready_i             ( acc_rsp_ready_top      ),
       // Spatz interface
       .issue_req_o              ( issue_req              ),
       .issue_valid_o            ( issue_valid            ),
