@@ -6,6 +6,7 @@
 //
 // The FPU sequencer gives basic FPU capabilities to Spatz. It manages the
 // floating-point scalar register file, and floating point memory requests.
+`define X_INTERFACE
 
 module spatz_fpu_sequencer
   import spatz_pkg::*;
@@ -95,13 +96,14 @@ module spatz_fpu_sequencer
   assign fpr_raddr = {fs3, fs2, fs1};
 
   snitch_regfile #(
-    .DATA_WIDTH    (FLEN        ),
-    .ADDR_WIDTH    (FPRRegWidth ),
-    .NR_READ_PORTS (NrReadPorts ),
-    .NR_WRITE_PORTS(NrWritePorts),
-    .ZERO_REG_ZERO (0           )
+    .DataWidth    ( FLEN        ),
+    .AddrWidth    ( FPRRegWidth ),
+    .NrReadPorts  ( 3           ),
+    .NrWritePorts ( NrWritePorts ),
+    .ZeroRegZero  ( 1           )
   ) i_fpr (
     .clk_i  (clk_i    ),
+    .rst_ni (rst_ni   ),
     .raddr_i(fpr_raddr),
     .rdata_o(fpr_rdata),
     .waddr_i(fpr_waddr),
@@ -223,6 +225,7 @@ module spatz_fpu_sequencer
             use_fs2 = !(issue_req_i.data_op inside {riscv_instr::FCLASS_B});
             use_fs3 = issue_req_i.data_op inside {riscv_instr::FMADD_B, riscv_instr::FMSUB_B, riscv_instr::FNMSUB_B, riscv_instr::FNMADD_B};
             use_fd  = !(issue_req_i.data_op inside {riscv_instr::FCLASS_B, riscv_instr::FLE_B, riscv_instr::FLT_B, riscv_instr::FEQ_B, riscv_instr::FCVT_W_B, riscv_instr::FCVT_WU_B});
+            use_rd  =   issue_req_i.data_op inside {riscv_instr::FCLASS_B, riscv_instr::FLE_B, riscv_instr::FLT_B, riscv_instr::FEQ_B, riscv_instr::FCVT_W_B, riscv_instr::FCVT_WU_B};
           end else begin
             illegal_inst = 1'b1;
           end
@@ -275,6 +278,7 @@ module spatz_fpu_sequencer
             use_fs2 = !(issue_req_i.data_op inside {riscv_instr::FCLASS_H});
             use_fs3 = issue_req_i.data_op inside {riscv_instr::FMADD_H, riscv_instr::FMSUB_H, riscv_instr::FNMSUB_H, riscv_instr::FNMADD_H};
             use_fd  = !(issue_req_i.data_op inside {riscv_instr::FCLASS_H, riscv_instr::FLE_H, riscv_instr::FLT_H, riscv_instr::FEQ_H, riscv_instr::FCVT_W_H, riscv_instr::FCVT_WU_H});
+            use_rd  =   issue_req_i.data_op inside {riscv_instr::FCLASS_H, riscv_instr::FLE_H, riscv_instr::FLT_H, riscv_instr::FEQ_H, riscv_instr::FCVT_W_H, riscv_instr::FCVT_WU_H};
           end else begin
             illegal_inst = 1'b1;
           end
@@ -327,27 +331,28 @@ module spatz_fpu_sequencer
             use_fs2 = !(issue_req_i.data_op inside {riscv_instr::FCLASS_S});
             use_fs3 = issue_req_i.data_op inside {riscv_instr::FMADD_S, riscv_instr::FMSUB_S, riscv_instr::FNMSUB_S, riscv_instr::FNMADD_S};
             use_fd  = !(issue_req_i.data_op inside {riscv_instr::FCLASS_S, riscv_instr::FLE_S, riscv_instr::FLT_S, riscv_instr::FEQ_S, riscv_instr::FCVT_W_S, riscv_instr::FCVT_WU_S});
+            use_rd  =   issue_req_i.data_op inside {riscv_instr::FCLASS_S, riscv_instr::FLE_S, riscv_instr::FLT_S, riscv_instr::FEQ_S, riscv_instr::FCVT_W_S, riscv_instr::FCVT_WU_S};
           end else begin
             illegal_inst = 1'b1;
           end
         end
-        riscv_instr::FMV_X_S: begin
-          if (RVF) begin
-            use_rd  = 1'b1;
-            use_fs1 = 1'b1;
-            is_move = 1'b1;
-          end else begin
-            illegal_inst = 1'b1;
-          end
-        end
-        riscv_instr::FMV_S_X: begin
-          if (RVF) begin
-            use_fd  = 1'b1;
-            is_move = 1'b1;
-          end else begin
-            illegal_inst = 1'b1;
-          end
-        end
+        // riscv_instr::FMV_X_S: begin
+        //   if (RVF) begin
+        //     use_rd  = 1'b1;
+        //     use_fs1 = 1'b1;
+        //     is_move = 1'b1;
+        //   end else begin
+        //     illegal_inst = 1'b1;
+        //   end
+        // end
+        // riscv_instr::FMV_S_X: begin
+        //   if (RVF) begin
+        //     use_fd  = 1'b1;
+        //     is_move = 1'b1;
+        //   end else begin
+        //     illegal_inst = 1'b1;
+        //   end
+        // end
 
         // Double Precision Floating-Point
         riscv_instr::FADD_D,
@@ -377,6 +382,7 @@ module spatz_fpu_sequencer
             use_fs2 = 1'b1;
             use_fs3 = issue_req_i.data_op inside {riscv_instr::FMADD_D, riscv_instr::FMSUB_D, riscv_instr::FNMSUB_D, riscv_instr::FNMADD_D};
             use_fd  = !(issue_req_i.data_op inside {riscv_instr::FCLASS_D, riscv_instr::FLE_D, riscv_instr::FLT_D, riscv_instr::FEQ_D, riscv_instr::FCVT_W_D, riscv_instr::FCVT_WU_D});
+            use_rd  =   issue_req_i.data_op inside {riscv_instr::FCLASS_D, riscv_instr::FLE_D, riscv_instr::FLT_D, riscv_instr::FEQ_D, riscv_instr::FCVT_W_D, riscv_instr::FCVT_WU_D};
           end else begin
             illegal_inst = 1'b1;
           end
@@ -444,8 +450,8 @@ module spatz_fpu_sequencer
         riscv_instr::VFWMACC_VF,
         riscv_instr::VFWNMACC_VF,
         riscv_instr::VFWMSAC_VF,
-        riscv_instr::VFWNMSAC_VF,
-        riscv_instr::VFWDOTP_VF: begin
+        // riscv_instr::VFWDOTP_VF,
+        riscv_instr::VFWNMSAC_VF: begin
           if (RVF) begin
             use_fs1 = 1'b1;
           end else begin
@@ -484,11 +490,18 @@ module spatz_fpu_sequencer
     issue_req_o.id[5] = use_fd;
 
     // Forward the response back to Snitch
-    if (!is_local)
-      issue_rsp_o = issue_rsp_i;
-    else
+    if (!is_local) begin
+      issue_rsp_o          = issue_rsp_i;
+      // For instructions that write to Snitch's integer RF (feq, flt, fle, fclass,
+      // fcvt.w.*), the FPU sequencer decoder sets use_rd=1 but Spatz itself has no
+      // visibility into this — it always returns writeback=0 for these ops.
+      // Override so that Snitch waits for the actual result rather than synthesizing
+      // a zero-result immediately via synth_result_valid.
+      issue_rsp_o.writeback = issue_rsp_i.writeback | use_rd;
+    end else
       issue_rsp_o = spatz_issue_rsp_t'{
-        accept   : use_rd,
+        // We should accept if not illegal instruction instead
+        accept   : !illegal_inst,
         writeback: use_rd,
         loadstore: is_load | is_store,
         exception: illegal_inst,
@@ -526,12 +539,16 @@ module spatz_fpu_sequencer
   logic [IdWidth-1:0]   mem_pid;
 
   snitch_lsu #(
-    .NaNBox             (1                  ),
-    .dreq_t             (dreq_t             ),
-    .drsp_t             (drsp_t             ),
-    .DataWidth          (FLEN               ),
-    .NumOutstandingMem  (NumOutstandingLoads),
-    .NumOutstandingLoads(NumOutstandingLoads)
+    .AddrWidth           (AddrWidth           ),
+    .DataWidth           (FLEN                ),
+    .dreq_t              (dreq_t              ),
+    .drsp_t              (drsp_t              ),
+    .tag_t               (logic [4:0]         ),
+    .NumOutstandingMem   (NumOutstandingLoads ),
+    .NumOutstandingLoads (NumOutstandingLoads ),
+    .NaNBox              (1'b1                ),
+    .Caq                 (1'b0                ),
+    .CaqRespTrackSeq     (1'b0                )
   ) i_fp_lsu (
     .clk_i        (clk_i           ),
     .rst_i        (~rst_ni         ),
@@ -543,6 +560,8 @@ module spatz_fpu_sequencer
     .lsu_qdata_i  (fp_lsu_qdata    ),
     .lsu_qsize_i  (fp_lsu_qsize    ),
     .lsu_qamo_i   (fp_lsu_qamo     ),
+    .lsu_qrepd_i  (1'b0            ),
+    .lsu_quser_i  ('0              ),
     .lsu_qvalid_i (fp_lsu_qvalid   ),
     .lsu_qready_o (fp_lsu_qready   ),
     // Response interface
@@ -551,25 +570,18 @@ module spatz_fpu_sequencer
     .lsu_perror_o (/* Unused */    ),
     .lsu_pvalid_o (fp_lsu_pvalid   ),
     .lsu_pready_i (fp_lsu_pready   ),
+    .lsu_empty_o  (/* unused */    ),
+    // CAQ interface (disabled)
+    .caq_qaddr_i  ('0              ),
+    .caq_qwrite_i ('0              ),
+    .caq_qvalid_i (1'b0            ),
+    .caq_qready_o (/* unused */    ),
+    .caq_pvalid_i (1'b0            ),
+    .caq_pvalid_o (/* unused */    ),
+    .caq_empty_o  (/* unused */    ),
     // Memory interface
-`ifdef MEMPOOL_SPATZ
-    .data_qaddr_o (mem_qaddr              ),
-    .data_qwrite_o(mem_qwrite             ),
-    .data_qamo_o  (/* Unused */           ),
-    .data_qdata_o (mem_qdata              ),
-    .data_qstrb_o (mem_qstrb              ),
-    .data_qid_o   (mem_qid                ),
-    .data_qvalid_o(fp_lsu_mem_req_valid_o ),
-    .data_qready_i(fp_lsu_mem_req_ready_i ),
-    .data_pdata_i (mem_pdata              ),
-    .data_perror_i(mem_perror             ),
-    .data_pid_i   (mem_pid                ),
-    .data_pvalid_i(fp_lsu_mem_rsp_valid_i ),
-    .data_pready_o(fp_lsu_mem_rsp_ready_o )
-`else
     .data_req_o   (fp_lsu_mem_req_o),
     .data_rsp_i   (fp_lsu_mem_rsp_i)
-`endif
   );
 
   // Number of memory operations in the accelerator
@@ -604,10 +616,24 @@ module spatz_fpu_sequencer
     fp_lsu_qtag    = fd;
     fp_lsu_qwrite  = is_store;
     fp_lsu_qsigned = 1'b0;
-    // lsu in mempool-snitch will write to argb
 `ifdef MEMPOOL_SPATZ
+    // MemPool Spatz passes the pre-computed address in data_argb.
     fp_lsu_qaddr   = issue_req_i.data_argb;
+`elsif X_INTERFACE
+    // In XIF mode data_argc carries rs3 (not the effective address).
+    // Compute addr from rs1 (data_arga) + sign-extended immediate:
+    //   loads  (I-type): imm = instr[31:20]
+    //   stores (S-type): imm = {instr[31:25], instr[11:7]}
+    begin
+      logic [11:0] lsu_imm;
+      lsu_imm      = is_store
+                   ? {issue_req_i.data_op[31:25], issue_req_i.data_op[11:7]}
+                   :  issue_req_i.data_op[31:20];
+      fp_lsu_qaddr = issue_req_i.data_arga[AddrWidth-1:0]
+                   + {{(AddrWidth-12){lsu_imm[11]}}, lsu_imm};
+    end
 `else
+    // In acc mode data_argc holds the pre-computed physical address.
     fp_lsu_qaddr   = issue_req_i.data_argc;
 `endif
     fp_lsu_qdata   = fpr_rdata[1];

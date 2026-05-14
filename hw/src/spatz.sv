@@ -13,6 +13,8 @@
 // back again. Finally, the Vector Register File (VRF) is the main register file
 // that stores all of the currently used vectors close to the execution units.
 
+`define X_INTERFACE
+
 module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     parameter int                  unsigned NrMemPorts          = 1,
     parameter bit                           RegisterRsp         = 0,
@@ -22,10 +24,12 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     // Memory request (FP Sequencer)
     parameter type                          dreq_t              = logic,
     parameter type                          drsp_t              = logic,
+`ifndef X_INTERFACE
     // Snitch interface
     parameter type                          spatz_issue_req_t   = logic,
     parameter type                          spatz_issue_rsp_t   = logic,
     parameter type                          spatz_rsp_t         = logic,
+`endif
     // X-Interface (used when X_INTERFACE is defined; harmless otherwise)
     parameter type                          x_issue_req_t       = logic,
     parameter type                          x_issue_resp_t      = logic,
@@ -101,6 +105,37 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   localparam int unsigned FpuBufDepth = 4;
   localparam int unsigned VlsuBufDepth = 2;
 
+`ifdef X_INTERFACE
+  // These types become locally used in Spatz when using XIF
+  typedef logic [31:0] data_t;
+
+  typedef enum logic [31:0] {
+    SPATZ = 0
+  } acc_addr_e;
+
+  typedef struct packed {
+    acc_addr_e addr;
+    logic [5:0] id;
+    logic [31:0] data_op;
+    data_t data_arga;
+    data_t data_argb;
+    data_t data_argc;
+  } spatz_issue_req_t;
+
+  typedef struct packed {
+    logic accept;
+    logic writeback;
+    logic loadstore;
+    logic exception;
+    logic isfloat;
+  } spatz_issue_rsp_t;
+
+  typedef struct packed {
+    logic [5:0] id;
+    logic error;
+    data_t data;
+  } spatz_rsp_t;
+`endif
   /////////////
   // Signals //
   /////////////
@@ -223,7 +258,13 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   always_comb begin
     // --- Issue request (X -> acc) ------------------------------------------
     acc_issue_req_top           = '0;
-    acc_issue_req_top.id        = x_issue_req_i.id;
+    // Use the destination register (instr[11:7]) as the acc id, following the
+    // acc convention (id = rd).  The FPU sequencer overrides id[5] with use_fd
+    // for FPR/GPR routing and echoes the id back, so x_result_o.rd correctly
+    // reflects the destination register at result time.  The original XIF
+    // counter is not used because Snitch's retire path uses x_result_i.rd, not
+    // x_result_i.id.
+    acc_issue_req_top.id        = {1'b0, x_issue_req_i.instr[11:7]};
     acc_issue_req_top.data_op   = x_issue_req_i.instr;
     acc_issue_req_top.data_arga = x_register_i.rs[0];
     acc_issue_req_top.data_argb = x_register_i.rs[1];
@@ -232,9 +273,15 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
 
     // --- Synthesized X-result for non-writeback instructions ---------------
     combined_issue_valid = x_issue_valid_i & x_register_valid_i;
+    // Gate on acc_issue_ready_top so the synthesized result only fires in the
+    // same cycle the issue handshake completes (atomic). Without this gate,
+    // synth_result_valid stays high the entire time Snitch is stalled on the
+    // issue, which forces acc_rsp_ready_top=0 and deadlocks the FP LSU
+    // response path.
     synth_result_valid   = combined_issue_valid
                          & acc_issue_rsp_top.accept
-                         & ~acc_issue_rsp_top.writeback;
+                         & ~acc_issue_rsp_top.writeback
+                         & acc_issue_ready_top;
 
     // --- Issue handshake ---------------------------------------------------
     // Writeback instructions: proceed as soon as Spatz is ready.

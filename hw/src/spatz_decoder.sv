@@ -908,8 +908,8 @@ module spatz_decoder
         riscv_instr::VFWSUB_WF,
         riscv_instr::VFWMUL_VV,
         riscv_instr::VFWMUL_VF,
-        riscv_instr::VFWDOTP_VV,
-        riscv_instr::VFWDOTP_VF,
+        // riscv_instr::VFWDOTP_VV,
+        // riscv_instr::VFWDOTP_VF,
         riscv_instr::VFWMACC_VV,
         riscv_instr::VFWMACC_VF,
         riscv_instr::VFWNMACC_VV,
@@ -1147,11 +1147,11 @@ module spatz_decoder
                 spatz_req.op_arith.widen_vs2 = 1'b1;
               end
 
-              riscv_instr::VFWDOTP_VV,
-              riscv_instr::VFWDOTP_VF: begin
-                spatz_req.op        = VSDOTP;
-                spatz_req.vd_is_src = 1'b1;
-              end
+              // riscv_instr::VFWDOTP_VV,
+              // riscv_instr::VFWDOTP_VF: begin
+              //   spatz_req.op        = VSDOTP;
+              //   spatz_req.vd_is_src = 1'b1;
+              // end
               riscv_instr::VFWMACC_VV,
               riscv_instr::VFWMACC_VF: begin
                 spatz_req.op                 = VFMADD;
