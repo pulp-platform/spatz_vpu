@@ -12,7 +12,7 @@ module spatz_fpu_sequencer
   import spatz_pkg::*;
   import rvv_pkg::*;
   import fpnew_pkg::*;
-  import reqrsp_pkg::*;
+  import snitch_pkg::amo_op_e;
   import cf_math_pkg::idx_width; #(
     // Memory request
     parameter type dreq_t            = logic,
@@ -519,7 +519,7 @@ module spatz_fpu_sequencer
   logic [AddrWidth-1:0] fp_lsu_qaddr;
   logic [DataWidth-1:0] fp_lsu_qdata;
   logic [1:0]           fp_lsu_qsize;
-  reqrsp_pkg::amo_op_e  fp_lsu_qamo;
+  amo_op_e              fp_lsu_qamo;
   logic fp_lsu_qvalid;
   logic fp_lsu_qready;
 
@@ -638,7 +638,7 @@ module spatz_fpu_sequencer
 `endif
     fp_lsu_qdata   = fpr_rdata[1];
     fp_lsu_qsize   = ls_size;
-    fp_lsu_qamo    = AMONone;
+    fp_lsu_qamo    = snitch_pkg::AMONone;
     fp_lsu_qvalid  = (is_load || is_store) && operands_available && !vlsu_stall;
 
     acc_mem_cnt_d     = acc_mem_cnt_q;
