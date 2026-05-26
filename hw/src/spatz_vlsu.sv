@@ -1011,7 +1011,7 @@ module spatz_vlsu
 `else
     assign spatz_mem_req[port] = '{addr:  mem_req_addr[port],
                                    write: !mem_is_load,
-                                   amo:   snitch_pkg::AMONone,
+                                   amo:   4'h0, // snitch_pkg::AMONone
                                    data:  mem_req_data[port],
                                    strb:  mem_req_strb[port],
                                    default: '0};
