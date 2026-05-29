@@ -107,7 +107,9 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
 
 `ifdef X_INTERFACE
   // These types become locally used in Spatz when using XIF
-  typedef logic [31:0] data_t;
+  // Use FLEN (64-bit for RVD) so that double-precision scalar operands
+  // forwarded by the FPU sequencer (fpr_rdata) are not truncated.
+  typedef logic [FLEN-1:0] data_t;
 
   typedef enum logic [31:0] {
     SPATZ = 0
