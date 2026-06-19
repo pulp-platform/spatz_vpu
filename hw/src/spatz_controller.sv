@@ -605,8 +605,8 @@ module spatz_controller
           issue_rsp_o.writeback = spatz_req.use_rd;
         end // CON
         VFU: begin
-          // vtype is illegal -> illegal instruction
-          if (vtype_q.vill) begin
+          // Scalar FP ops use the VFU path but do not depend on the vector vtype CSR.
+          if (vtype_q.vill && !decoder_rsp.spatz_req.op_arith.is_scalar) begin
             issue_rsp_o.accept = 1'b0;
           end
         end // VFU
