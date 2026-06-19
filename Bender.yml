@@ -45,6 +45,7 @@ sources:
     - hw/src/spatz_ipu.sv
     - hw/src/spatz_vfu.sv
     - hw/src/spatz_vlsu.sv
+    - hw/src/spatz_doublebw_vlsu.sv
     - hw/src/spatz_vrf.sv
     - hw/src/spatz_vsldu.sv
     # Level 4
