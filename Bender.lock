@@ -23,10 +23,10 @@ packages:
       Git: https://github.com/pulp-platform/common_verification.git
     dependencies: []
   fpnew:
-    revision: bf2100ff68cf736c50b095169d87231a1fa3cc66
+    revision: 0f6caf1dc76eb4f96c388364e35e8bf03ca19625
     version: null
     source:
-      Git: https://github.com/Jayanth2209/cvfpu.git
+      Git: https://github.com/arpansur/cvfpu.git
     dependencies:
     - common_cells
     - fpu_div_sqrt_mvp

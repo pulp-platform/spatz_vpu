@@ -12,7 +12,7 @@ package:
 dependencies:
   riscv-dbg:          { git: "https://github.com/pulp-platform/riscv-dbg.git",          version: 0.7.0          }
   common_cells:       { git: "https://github.com/pulp-platform/common_cells.git",       version: 1.28.0         }
-  FPnew:              { git: "https://github.com/Jayanth2209/cvfpu.git",               rev:     bf2100ff68cf736c50b095169d87231a1fa3cc66 }
+  FPnew:              { git: "https://github.com/arpansur/cvfpu.git",                   rev:     0f6caf1dc76eb4f96c388364e35e8bf03ca19625 } # branch: pace-pipe-rebase
   tech_cells_generic: { git: "https://github.com/pulp-platform/tech_cells_generic.git", version: 0.2.13         }
   snitch:             { path: "hw/ip/snitch"                                                                    }
   reqrsp_interface:   { path: "hw/ip/reqrsp_interface"                                                          }
@@ -34,6 +34,7 @@ sources:
     # Level 2
     - hw/src/spatz_decoder.sv
     - hw/src/spatz_simd_lane.sv
+    - hw/src/pace_mem.sv
     - target: fpga
       files:
         - hw/src/vregfile_fpga.sv
