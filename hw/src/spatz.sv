@@ -90,6 +90,7 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     // FPU side channel
     input  roundmode_e                        fpu_rnd_mode_i,
     input  fmt_mode_t                         fpu_fmt_mode_i,
+    input  pace_mode_t                        fpu_pace_mode_i,
     output status_t                           fpu_status_o
   );
 
@@ -403,13 +404,47 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   vrf_addr_t [NrWritePorts-1:0] vrf_waddr, vrf_waddr_buf;
   vrf_data_t [NrWritePorts-1:0] vrf_wdata, vrf_wdata_buf;
   logic      [NrWritePorts-1:0] vrf_we;
+  logic      [NrWritePorts-1:0] vrf_we_mask;
   vrf_be_t   [NrWritePorts-1:0] vrf_wbe, vrf_wbe_buf;
   logic      [NrWritePorts-1:0] vrf_wvalid;
+  logic      [NrWritePorts-1:0] vrf_wvalid_mask;
   // Read ports
   vrf_addr_t [NrReadPorts-1:0]  vrf_raddr;
   logic      [NrReadPorts-1:0]  vrf_re;
   vrf_data_t [NrReadPorts-1:0]  vrf_rdata;
   logic      [NrReadPorts-1:0]  vrf_rvalid;
+
+  // PACE parameter memory
+  // With DOUBLE_BW both VLSU write ports carry consecutive 256-bit chunks each cycle,
+  // so we must capture both to reconstruct the contiguous parameter stream.
+`ifdef DOUBLE_BW
+  localparam int unsigned PaceBufWidth = 2 * N_FU * ELEN;
+`else
+  localparam int unsigned PaceBufWidth = N_FU * ELEN;
+`endif
+  localparam int unsigned PaceLdIdx    = VLSU_VD_WD0;
+  localparam int unsigned PaceBufDepth = (PaceParamWidth + PaceBufWidth - 1) / PaceBufWidth;
+  logic                   pace_mem_we;
+  logic [PaceParamWidth-1:0] pace_params;
+  logic                   pace_mem_init_done;
+
+`ifdef DOUBLE_BW
+  // Both ports are valid simultaneously during a DOUBLE_BW load.
+  assign pace_mem_we = fpu_pace_mode_i.enable & vrf_we[VLSU_VD_WD0] & vrf_we[VLSU_VD_WD1] & (~pace_mem_init_done);
+`else
+  assign pace_mem_we = fpu_pace_mode_i.enable & vrf_we[PaceLdIdx] & (~pace_mem_init_done);
+`endif
+
+  always_comb begin
+    vrf_we_mask = vrf_we;
+    vrf_wvalid  = vrf_wvalid_mask;
+    vrf_we_mask[VLSU_VD_WD0] = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? 1'b0 : vrf_we[VLSU_VD_WD0];
+    vrf_wvalid[VLSU_VD_WD0]  = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? vrf_we[VLSU_VD_WD0] : vrf_wvalid_mask[VLSU_VD_WD0];
+`ifdef DOUBLE_BW
+    vrf_we_mask[VLSU_VD_WD1] = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? 1'b0 : vrf_we[VLSU_VD_WD1];
+    vrf_wvalid[VLSU_VD_WD1]  = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? vrf_we[VLSU_VD_WD1] : vrf_wvalid_mask[VLSU_VD_WD1];
+`endif
+  end
 
   spatz_vrf #(
     .NrReadPorts (NrReadPorts ),
@@ -422,9 +457,9 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     // Write Ports
     .waddr_i         (vrf_waddr_buf ),
     .wdata_i         (vrf_wdata_buf ),
-    .we_i            (vrf_we        ),
-    .wbe_i           (vrf_wbe_buf   ),
-    .wvalid_o        (vrf_wvalid    ),
+    .we_i            (vrf_we_mask    ),
+    .wbe_i           (vrf_wbe_buf    ),
+    .wvalid_o        (vrf_wvalid_mask),
   `ifdef BUF_FPU
     .fpu_buf_usage_i (vfu_buf_usage ),
   `endif
@@ -433,6 +468,25 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .re_i            (vrf_re        ),
     .rdata_o         (vrf_rdata     ),
     .rvalid_o        (vrf_rvalid    )
+  );
+
+  pace_mem #(
+    .BufDepth  (PaceBufDepth ),
+    .BufWidth  (PaceBufWidth ),
+    .ParamWidth(PaceParamWidth)
+  ) i_pace_mem (
+    .clk_i  (clk_i                  ),
+    .rst_ni (rst_ni                 ),
+    .we_i   (pace_mem_we            ),
+    .done_o (pace_mem_init_done     ),
+    .init_i (fpu_pace_mode_i.enable ),
+`ifdef DOUBLE_BW
+    // WD0 carries lower addresses (LSBs), WD1 carries higher addresses (MSBs).
+    .data_i ({vrf_wdata_buf[VLSU_VD_WD1], vrf_wdata_buf[VLSU_VD_WD0]}),
+`else
+    .data_i (vrf_wdata_buf[PaceLdIdx]),
+`endif
+    .data_o (pace_params            )
   );
 
   ////////////////
@@ -654,6 +708,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .vrf_rvalid_i     (vrf_rvalid[VFU_VD_RD:VFU_VS2_RD]                        ),
     .vrf_id_o         ({sb_id[SB_VFU_VD_WD], sb_id[SB_VFU_VD_RD:SB_VFU_VS2_RD]}),
     // FPU side-channel
+    .pace_mode_i      (fpu_pace_mode_i                                         ),
+    .pace_param_i     (pace_params                                             ),
     .fpu_status_o     (fpu_status_o                                            )
   );
 

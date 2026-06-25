@@ -1975,6 +1975,7 @@ package riscv_instr;
   localparam logic [11:0] CSR_MHPMCOUNTER29H = 12'hb9d;
   localparam logic [11:0] CSR_MHPMCOUNTER30H = 12'hb9e;
   localparam logic [11:0] CSR_MHPMCOUNTER31H = 12'hb9f;
+  localparam logic [11:0] CSR_PACE           = 12'hba0;
 
   // MXCore custom instructions (opcode custom-3: 1110111)
   localparam logic [31:0] MXDOTP_B0          = 32'b?????????????????000?????1110111;

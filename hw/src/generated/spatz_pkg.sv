@@ -76,6 +76,11 @@ package spatz_pkg;
 
   // Encodes both the scalar RD and the VD address in the VRF
   localparam int VFURespAddrWidth  = GPRWidth > $clog2(NrVRFWords) ? GPRWidth : $clog2(NrVRFWords);
+  localparam int PaceDegree        = 2;
+  localparam int PaceParts         = 16;
+  localparam int PaceEps           = 1;
+  localparam int PaceDataWidth     = 32;
+  localparam int PaceParamWidth    = ((PaceDegree + 1)*PaceParts + PaceParts - 1 + 2*PaceEps) * PaceDataWidth;
 
   //////////////////////
   // Type Definitions //
@@ -362,7 +367,8 @@ package spatz_pkg;
     //              INT8  INT16 INT32 INT64
     IntFmtMask   : {1'b1, 1'b1, 1'b1, 1'b1},
     MxFpFmtMask  : 9'b0,
-    MxIntFmtMask : 4'b0
+    MxIntFmtMask : 4'b0,
+    PaceFeatures : '{PaceDegree: PaceDegree, PaceParts: PaceParts, PaceEps: 1'b1, PaceDataWidth: PaceDataWidth, PaceParamWidth: PaceParamWidth, PaceBstPipeRegs: 4'b0100, FmtConfig: 9'b101010000}
   } :
   // Single Precision FPU
   '{
@@ -374,7 +380,8 @@ package spatz_pkg;
     //              INT8  INT16 INT32 INT64
     IntFmtMask   : {1'b1, 1'b1, 1'b1, 1'b0},
     MxFpFmtMask  : 9'b0,
-    MxIntFmtMask : 4'b0
+    MxIntFmtMask : 4'b0,
+    PaceFeatures : '{PaceDegree: PaceDegree, PaceParts: PaceParts, PaceEps: 1'b1, PaceDataWidth: PaceDataWidth, PaceParamWidth: PaceParamWidth, PaceBstPipeRegs: 4'b0100, FmtConfig: 9'b101010000}
   };
 
   // FP format conversion
