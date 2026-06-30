@@ -418,7 +418,9 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   // With DOUBLE_BW both VLSU write ports carry consecutive 256-bit chunks each cycle,
   // so we must capture both to reconstruct the contiguous parameter stream.
 `ifdef DOUBLE_BW
-  localparam int unsigned PaceBufWidth = 2 * N_FU * ELEN;
+  // Use WD0-only for pace_mem: each beat captures 256 bits from WD0 (lower addresses).
+  // This avoids requiring simultaneous WD0+WD1 grants, which is unreliable in DOUBLE_BW.
+  localparam int unsigned PaceBufWidth = N_FU * ELEN;
 `else
   localparam int unsigned PaceBufWidth = N_FU * ELEN;
 `endif
@@ -429,8 +431,7 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   logic                   pace_mem_init_done;
 
 `ifdef DOUBLE_BW
-  // Both ports are valid simultaneously during a DOUBLE_BW load.
-  assign pace_mem_we = fpu_pace_mode_i.enable & vrf_we[VLSU_VD_WD0] & vrf_we[VLSU_VD_WD1] & (~pace_mem_init_done);
+  assign pace_mem_we = fpu_pace_mode_i.enable & vrf_we[VLSU_VD_WD0] & (~pace_mem_init_done);
 `else
   assign pace_mem_we = fpu_pace_mode_i.enable & vrf_we[PaceLdIdx] & (~pace_mem_init_done);
 `endif
@@ -481,8 +482,7 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .done_o (pace_mem_init_done     ),
     .init_i (fpu_pace_mode_i.enable ),
 `ifdef DOUBLE_BW
-    // WD0 carries lower addresses (LSBs), WD1 carries higher addresses (MSBs).
-    .data_i ({vrf_wdata_buf[VLSU_VD_WD1], vrf_wdata_buf[VLSU_VD_WD0]}),
+    .data_i (vrf_wdata_buf[VLSU_VD_WD0]),
 `else
     .data_i (vrf_wdata_buf[PaceLdIdx]),
 `endif
