@@ -424,7 +424,11 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
 `else
   localparam int unsigned PaceBufWidth = N_FU * ELEN;
 `endif
+`ifdef DOUBLE_BW
   localparam int unsigned PaceLdIdx    = VLSU_VD_WD0;
+`else
+  localparam int unsigned PaceLdIdx    = VLSU_VD_WD;
+`endif
   localparam int unsigned PaceBufDepth = (PaceParamWidth + PaceBufWidth - 1) / PaceBufWidth;
   logic                   pace_mem_we;
   logic [PaceParamWidth-1:0] pace_params;
@@ -439,8 +443,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   always_comb begin
     vrf_we_mask = vrf_we;
     vrf_wvalid  = vrf_wvalid_mask;
-    vrf_we_mask[VLSU_VD_WD0] = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? 1'b0 : vrf_we[VLSU_VD_WD0];
-    vrf_wvalid[VLSU_VD_WD0]  = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? vrf_we[VLSU_VD_WD0] : vrf_wvalid_mask[VLSU_VD_WD0];
+    vrf_we_mask[PaceLdIdx] = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? 1'b0 : vrf_we[PaceLdIdx];
+    vrf_wvalid[PaceLdIdx]  = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? vrf_we[PaceLdIdx] : vrf_wvalid_mask[PaceLdIdx];
 `ifdef DOUBLE_BW
     vrf_we_mask[VLSU_VD_WD1] = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? 1'b0 : vrf_we[VLSU_VD_WD1];
     vrf_wvalid[VLSU_VD_WD1]  = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? vrf_we[VLSU_VD_WD1] : vrf_wvalid_mask[VLSU_VD_WD1];
