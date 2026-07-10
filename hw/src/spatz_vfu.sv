@@ -11,7 +11,7 @@
 module spatz_vfu
   import spatz_pkg::*;
   import rvv_pkg::*;
-  import cf_math_pkg::idx_width;
+  import cc_pkg::idx_width;
   import fpnew_pkg::*; #(
     /// FPU configuration.
     parameter fpu_implementation_t FPUImplementation = fpu_implementation_t'(0)
@@ -73,11 +73,12 @@ module spatz_vfu
   logic       spatz_req_valid;
   logic       spatz_req_ready;
 
-  spill_register #(
-    .T(spatz_req_t)
+  cc_spill_register #(
+    .data_t(spatz_req_t)
   ) i_operation_queue (
     .clk_i  (clk_i                                          ),
     .rst_ni (rst_ni                                         ),
+    .clr_i  (1'b0),
     .data_i (spatz_req_i                                    ),
     .valid_i(spatz_req_valid_i && spatz_req_i.ex_unit == VFU),
     .ready_o(spatz_req_ready_o                              ),

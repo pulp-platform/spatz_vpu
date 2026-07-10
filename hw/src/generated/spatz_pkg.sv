@@ -9,7 +9,7 @@
 package spatz_pkg;
 
   import rvv_pkg::*;
-  import cf_math_pkg::idx_width;
+  import cc_pkg::idx_width;
 
   //////////////////
   //  Parameters  //

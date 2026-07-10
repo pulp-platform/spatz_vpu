@@ -13,7 +13,7 @@
 module spatz_doublebw_vlsu
   import spatz_pkg::*;
   import rvv_pkg::*;
-  import cf_math_pkg::idx_width; #(
+  import cc_pkg::idx_width; #(
     parameter int unsigned   NrMemPorts         = 1,
     parameter int unsigned   NrOutstandingLoads = 16,
     // Memory request
@@ -86,11 +86,12 @@ module spatz_doublebw_vlsu
   logic       mem_spatz_req_valid;
   logic       mem_spatz_req_ready;
 
-  spill_register #(
-    .T(spatz_req_t)
+  cc_spill_register #(
+    .data_t(spatz_req_t)
   ) i_operation_queue (
     .clk_i  (clk_i                                          ),
     .rst_ni (rst_ni                                         ),
+    .clr_i  (1'b0),
     .data_i (spatz_req_d                                    ),
     .valid_i(spatz_req_valid_i && spatz_req_i.ex_unit == LSU),
     .ready_o(spatz_req_ready_o                              ),
@@ -218,14 +219,14 @@ module spatz_doublebw_vlsu
         .empty_o  (rob_empty[intf][fu] )
       );
 `else
-      fifo_v3 #(
-        .DATA_WIDTH(ELEN              ),
-        .DEPTH     (NrOutstandingLoads)
+      cc_fifo #(
+        .DataWidth(ELEN              ),
+        .Depth     (NrOutstandingLoads)
       ) i_reorder_buffer (
         .clk_i     (clk_i               ),
         .rst_ni    (rst_ni              ),
+        .clr_i     (1'b0),
         .flush_i   (1'b0                ),
-        .testmode_i(1'b0                ),
         .data_i    (rob_wdata[intf][fu] ),
         .push_i    (rob_push[intf][fu]  ),
         .data_o    (rob_rdata[intf][fu] ),
@@ -263,12 +264,12 @@ module spatz_doublebw_vlsu
 
   for (genvar intf = 0; intf < NrInterfaces; intf++) begin: gen_mem_counters_intf
     for (genvar fu = 0; fu < N_FU; fu++) begin: gen_mem_counters_intf_fu
-      delta_counter #(
-        .WIDTH($bits(vlen_t))
+      cc_delta_counter #(
+        .Width($bits(vlen_t))
       ) i_delta_counter_mem (
         .clk_i     (clk_i                  ),
         .rst_ni    (rst_ni                 ),
-        .clear_i   (1'b0                   ),
+        .clr_i     (1'b0                   ),
         .en_i      (mem_counter_en[intf][fu]   ),
         .load_i    (mem_counter_load[intf][fu] ),
         .down_i    (1'b0                   ), // We always count up
@@ -278,12 +279,12 @@ module spatz_doublebw_vlsu
         .overflow_o(/* Unused */           )
       );
 
-      delta_counter #(
-        .WIDTH($bits(vlen_t))
+      cc_delta_counter #(
+        .Width($bits(vlen_t))
       ) i_delta_counter_mem_idx (
         .clk_i     (clk_i                      ),
         .rst_ni    (rst_ni                     ),
-        .clear_i   (1'b0                       ),
+        .clr_i     (1'b0                       ),
         .en_i      (mem_counter_en[intf][fu]       ),
         .load_i    (mem_counter_load[intf][fu]     ),
         .down_i    (1'b0                       ), // We always count up
@@ -332,15 +333,15 @@ module spatz_doublebw_vlsu
   logic             commit_insn_empty;
   logic             commit_insn_valid;
 
-  fifo_v3 #(
-    .DEPTH       (3                ),
-    .FALL_THROUGH(1'b1             ),
-    .dtype       (commit_metadata_t)
+  cc_fifo #(
+    .Depth       (3                ),
+    .FallThrough(1'b1             ),
+    .data_t       (commit_metadata_t)
   ) i_fifo_commit_insn (
     .clk_i     (clk_i            ),
     .rst_ni    (rst_ni           ),
+    .clr_i     (1'b0),
     .flush_i   (1'b0             ),
-    .testmode_i(1'b0             ),
     .data_i    (commit_insn_d    ),
     .push_i    (commit_insn_push ),
     .full_o    (/* Unused */     ),
@@ -406,12 +407,12 @@ module spatz_doublebw_vlsu
 
   for (genvar intf = 0; intf < NrInterfaces; intf++) begin : gen_vreg_counters_intf
     for (genvar fu = 0; fu < N_FU; fu++) begin : gen_vreg_counters_intf_fu
-      delta_counter #(
-        .WIDTH($bits(vlen_t))
+      cc_delta_counter #(
+        .Width($bits(vlen_t))
       ) i_delta_counter_vreg (
         .clk_i     (clk_i                         ),
         .rst_ni    (rst_ni                        ),
-        .clear_i   (1'b0                          ),
+        .clr_i     (1'b0                          ),
         .en_i      (commit_counter_en[intf][fu]   ),
         .load_i    (commit_counter_load[intf][fu] ),
         .down_i    (1'b0                          ), // We always count up
@@ -617,14 +618,14 @@ module spatz_doublebw_vlsu
   logic [NrInterfaces-1:0] [N_FU-1:0] offset_queue_full;
   for (genvar intf = 0; intf < NrInterfaces; intf++) begin : gen_offset_queue_intf
     for (genvar fu = 0; fu < N_FU; fu++) begin : gen_offset_queue_intf_fu
-      fifo_v3 #(
-        .DATA_WIDTH(int'(MAXEW)       ),
-        .DEPTH     (NrOutstandingLoads)
+      cc_fifo #(
+        .DataWidth(int'(MAXEW)       ),
+        .Depth     (NrOutstandingLoads)
       ) i_offset_queue (
         .clk_i     (clk_i                                                                    ),
         .rst_ni    (rst_ni                                                                   ),
+        .clr_i     (1'b0),
         .flush_i   (1'b0                                                                     ),
-        .testmode_i(1'b0                                                                     ),
         .empty_o   (/* Unused */                                                             ),
         .full_o    (offset_queue_full[intf][fu]                                              ),
         .push_i    (spatz_mem_req_valid[intf][fu] && spatz_mem_req_ready[intf][fu] && mem_is_load),
@@ -659,11 +660,12 @@ module spatz_doublebw_vlsu
   `FF(vrf_commit_bypass_q, vrf_commit_bypass_d, 1'b0)
 
   for (genvar intf = 0; intf < NrInterfaces; intf++) begin : gen_vrf_req_register_intf
-    spill_register #(
-      .T(vrf_req_t)
+    cc_spill_register #(
+      .data_t(vrf_req_t)
     ) i_vrf_req_register (
       .clk_i  (clk_i                ),
       .rst_ni (rst_ni               ),
+      .clr_i  (1'b0),
       .data_i (vrf_req_d[intf]      ),
       .valid_i(vrf_req_valid_d[intf]),
       .ready_o(vrf_req_ready_d[intf]),
@@ -1116,11 +1118,12 @@ module spatz_doublebw_vlsu
     for (genvar fu = 0; fu < N_FU; fu++) begin : gen_mem_req
       localparam int unsigned port = intf * N_FU + fu;
 
-      spill_register #(
-        .T(spatz_mem_req_t)
+      cc_spill_register #(
+        .data_t(spatz_mem_req_t)
       ) i_spatz_mem_req_register (
         .clk_i   (clk_i                          ),
         .rst_ni  (rst_ni                         ),
+        .clr_i  (1'b0),
         .data_i  (spatz_mem_req[intf][fu]        ),
         .valid_i (spatz_mem_req_valid[intf][fu]  ),
         .ready_o (spatz_mem_req_ready[intf][fu]  ),

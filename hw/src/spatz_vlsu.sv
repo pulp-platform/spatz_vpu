@@ -10,7 +10,7 @@
 module spatz_vlsu
   import spatz_pkg::*;
   import rvv_pkg::*;
-  import cf_math_pkg::idx_width; #(
+  import cc_pkg::idx_width; #(
     parameter int unsigned   NrMemPorts         = 1,
     parameter int unsigned   NrOutstandingLoads = 8,
     // Memory request
@@ -79,11 +79,12 @@ module spatz_vlsu
   logic       mem_spatz_req_valid;
   logic       mem_spatz_req_ready;
 
-  spill_register #(
-    .T(spatz_req_t)
+  cc_spill_register #(
+    .data_t(spatz_req_t)
   ) i_operation_queue (
     .clk_i  (clk_i                                          ),
     .rst_ni (rst_ni                                         ),
+    .clr_i  (1'b0),
     .data_i (spatz_req_d                                    ),
     .valid_i(spatz_req_valid_i && spatz_req_i.ex_unit == LSU),
     .ready_o(spatz_req_ready_o                              ),
@@ -203,14 +204,14 @@ module spatz_vlsu
       .empty_o  (rob_empty[port] )
     );
 `else
-    fifo_v3 #(
-      .DATA_WIDTH(ELEN              ),
-      .DEPTH     (NrOutstandingLoads)
+    cc_fifo #(
+      .DataWidth(ELEN              ),
+      .Depth     (NrOutstandingLoads)
     ) i_reorder_buffer (
       .clk_i     (clk_i           ),
       .rst_ni    (rst_ni          ),
+      .clr_i     (1'b0),
       .flush_i   (1'b0            ),
-      .testmode_i(1'b0            ),
       .data_i    (rob_wdata[port] ),
       .push_i    (rob_push[port]  ),
       .data_o    (rob_rdata[port] ),
@@ -246,12 +247,12 @@ module spatz_vlsu
   vlen_t [NrMemPorts-1:0] mem_idx_counter_q;
 
   for (genvar port = 0; port < NrMemPorts; port++) begin: gen_mem_counters
-    delta_counter #(
-      .WIDTH($bits(vlen_t))
+    cc_delta_counter #(
+      .Width($bits(vlen_t))
     ) i_delta_counter_mem (
       .clk_i     (clk_i                  ),
       .rst_ni    (rst_ni                 ),
-      .clear_i   (1'b0                   ),
+      .clr_i     (1'b0                   ),
       .en_i      (mem_counter_en[port]   ),
       .load_i    (mem_counter_load[port] ),
       .down_i    (1'b0                   ), // We always count up
@@ -261,12 +262,12 @@ module spatz_vlsu
       .overflow_o(/* Unused */           )
     );
 
-    delta_counter #(
-      .WIDTH($bits(vlen_t))
+    cc_delta_counter #(
+      .Width($bits(vlen_t))
     ) i_delta_counter_mem_idx (
       .clk_i     (clk_i                      ),
       .rst_ni    (rst_ni                     ),
-      .clear_i   (1'b0                       ),
+      .clr_i     (1'b0                       ),
       .en_i      (mem_counter_en[port]       ),
       .load_i    (mem_counter_load[port]     ),
       .down_i    (1'b0                       ), // We always count up
@@ -313,15 +314,15 @@ module spatz_vlsu
   logic             commit_insn_empty;
   logic             commit_insn_valid;
 
-  fifo_v3 #(
-    .DEPTH       (NrParallelInstructions),
-    .FALL_THROUGH(1'b1                  ),
-    .dtype       (commit_metadata_t     )
+  cc_fifo #(
+    .Depth       (NrParallelInstructions),
+    .FallThrough(1'b1                  ),
+    .data_t       (commit_metadata_t     )
   ) i_fifo_commit_insn (
     .clk_i     (clk_i            ),
     .rst_ni    (rst_ni           ),
+    .clr_i     (1'b0),
     .flush_i   (1'b0             ),
-    .testmode_i(1'b0             ),
     .data_i    (commit_insn_d    ),
     .push_i    (commit_insn_push ),
     .full_o    (/* Unused */     ),
@@ -386,12 +387,12 @@ module spatz_vlsu
   logic  [NrMemPorts-1:0] commit_finished_d;
 
   for (genvar fu = 0; fu < N_FU; fu++) begin: gen_vreg_counters
-    delta_counter #(
-      .WIDTH($bits(vlen_t))
+    cc_delta_counter #(
+      .Width($bits(vlen_t))
     ) i_delta_counter_vreg (
       .clk_i     (clk_i                   ),
       .rst_ni    (rst_ni                  ),
-      .clear_i   (1'b0                    ),
+      .clr_i     (1'b0                    ),
       .en_i      (commit_counter_en[fu]   ),
       .load_i    (commit_counter_load[fu] ),
       .down_i    (1'b0                    ), // We always count up
@@ -573,14 +574,14 @@ module spatz_vlsu
   addr_offset_t [NrMemPorts-1:0] vreg_addr_offset;
   logic [NrMemPorts-1:0] offset_queue_full;
   for (genvar port = 0; port < NrMemPorts; port++) begin : gen_offset_queue
-    fifo_v3 #(
-      .DATA_WIDTH(int'(MAXEW)       ),
-      .DEPTH     (NrOutstandingLoads)
+    cc_fifo #(
+      .DataWidth(int'(MAXEW)       ),
+      .Depth     (NrOutstandingLoads)
     ) i_offset_queue (
       .clk_i     (clk_i                                                                ),
       .rst_ni    (rst_ni                                                               ),
+      .clr_i     (1'b0),
       .flush_i   (1'b0                                                                 ),
-      .testmode_i(1'b0                                                                 ),
       .empty_o   (/* Unused */                                                         ),
       .full_o    (offset_queue_full[port]                                              ),
       .push_i    (spatz_mem_req_valid[port] && spatz_mem_req_ready[port] && mem_is_load),
@@ -608,11 +609,12 @@ module spatz_vlsu
   logic     vrf_req_valid_d, vrf_req_ready_d;
   logic     vrf_req_valid_q, vrf_req_ready_q;
 
-  spill_register #(
-    .T(vrf_req_t)
+  cc_spill_register #(
+    .data_t(vrf_req_t)
   ) i_vrf_req_register (
     .clk_i  (clk_i          ),
     .rst_ni (rst_ni         ),
+    .clr_i  (1'b0),
     .data_i (vrf_req_d      ),
     .valid_i(vrf_req_valid_d),
     .ready_o(vrf_req_ready_d),
@@ -984,11 +986,12 @@ module spatz_vlsu
 
   // Create memory requests
   for (genvar port = 0; port < NrMemPorts; port++) begin : gen_mem_req
-    spill_register #(
-      .T(spatz_mem_req_t)
+    cc_spill_register #(
+      .data_t(spatz_mem_req_t)
     ) i_spatz_mem_req_register (
       .clk_i   (clk_i                      ),
       .rst_ni  (rst_ni                     ),
+      .clr_i  (1'b0),
       .data_i  (spatz_mem_req[port]        ),
       .valid_i (spatz_mem_req_valid[port]  ),
       .ready_o (spatz_mem_req_ready[port]  ),

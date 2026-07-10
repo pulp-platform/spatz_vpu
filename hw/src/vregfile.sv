@@ -111,7 +111,7 @@ module vregfile import spatz_pkg::*; #(
   // Read data from memory
   for (genvar port = 0; port < NrReadPorts; port++) begin: gen_read_mem
     // Reuse the decision tree from the RR arbiter
-    rr_arb_tree #(
+    cc_rr_arb_tree #(
       .AxiVldRdy(1'b1     ),
       .ExtPrio  (1'b1     ),
       .DataWidth(WordWidth),
@@ -119,7 +119,7 @@ module vregfile import spatz_pkg::*; #(
     ) i_read_tree (
       .clk_i  (clk_i        ),
       .rst_ni (rst_ni       ),
-      .flush_i(1'b0         ),
+      .clr_i  (1'b0         ),
       .idx_o  (/* Unused */ ),
       .data_i (mem          ),
       .rr_i   (raddr_i[port]),

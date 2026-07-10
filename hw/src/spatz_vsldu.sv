@@ -9,7 +9,7 @@
 module spatz_vsldu
   import spatz_pkg::*;
   import rvv_pkg::*;
-  import cf_math_pkg::idx_width; (
+  import cc_pkg::idx_width; (
     input  logic             clk_i,
     input  logic             rst_ni,
     // Spatz request
@@ -45,11 +45,12 @@ module spatz_vsldu
   logic       spatz_req_valid;
   logic       spatz_req_ready;
 
-  spill_register #(
-    .T(spatz_req_t)
+  cc_spill_register #(
+    .data_t(spatz_req_t)
   ) i_operation_queue (
     .clk_i  (clk_i                                          ),
     .rst_ni (rst_ni                                         ),
+    .clr_i  (1'b0),
     .data_i (spatz_req_d                                    ),
     .valid_i(spatz_req_valid_i && spatz_req_i.ex_unit == SLD),
     .ready_o(spatz_req_ready_o                              ),
@@ -104,11 +105,12 @@ module spatz_vsldu
   logic     vrf_req_valid_d, vrf_req_ready_d;
   logic     vrf_req_valid_q, vrf_req_ready_q;
 
-  spill_register #(
-    .T(vrf_req_t)
+  cc_spill_register #(
+    .data_t(vrf_req_t)
   ) i_vrf_req_register (
     .clk_i  (clk_i          ),
     .rst_ni (rst_ni         ),
+    .clr_i  (1'b0),
     .data_i (vrf_req_d      ),
     .valid_i(vrf_req_valid_d),
     .ready_o(vrf_req_ready_d),

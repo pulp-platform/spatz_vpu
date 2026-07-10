@@ -10,10 +10,9 @@ package:
     - "Diyou Shen         <dishen@iis.ee.ethz.ch"
 
 dependencies:
-  riscv-dbg:          { git: "https://github.com/pulp-platform/riscv-dbg.git",          version: 0.7.0          }
-  common_cells:       { git: "https://github.com/pulp-platform/common_cells.git",       version: 1.28.0         }
-  FPnew:              { git: "https://github.com/Jayanth2209/cvfpu.git",               rev:     bf2100ff68cf736c50b095169d87231a1fa3cc66 }
-  tech_cells_generic: { git: "https://github.com/pulp-platform/tech_cells_generic.git", version: 0.2.13         }
+  common_cells:       { git: "https://github.com/pulp-platform/common_cells.git",       rev: master             }
+  FPnew:              { git: "https://github.com/pulp-platform/cvfpu.git",              rev: common-cells-v2    }
+  tech_cells_generic: { git: "https://github.com/pulp-platform/tech_cells_generic.git", version: 0.2.14         }
   snitch:             { path: "hw/ip/snitch"                                                                    }
   reqrsp_interface:   { path: "hw/ip/reqrsp_interface"                                                          }
 

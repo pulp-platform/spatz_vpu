@@ -12,7 +12,7 @@ module spatz_fpu_sequencer
   import spatz_pkg::*;
   import rvv_pkg::*;
   import fpnew_pkg::*;
-  import cf_math_pkg::idx_width; #(
+  import cc_pkg::idx_width; #(
     // Memory request
     parameter type dreq_t            = logic,
     parameter type drsp_t            = logic,
@@ -24,7 +24,7 @@ module spatz_fpu_sequencer
     parameter int unsigned AddrWidth           = 32,
     parameter int unsigned DataWidth           = FLEN,
     parameter int unsigned NumOutstandingLoads = 1,
-    localparam int unsigned IdWidth = cf_math_pkg::idx_width(NumOutstandingLoads)
+    localparam int unsigned IdWidth = cc_pkg::idx_width(NumOutstandingLoads)
   ) (
     input  logic             clk_i,
     input  logic             rst_ni,
@@ -70,7 +70,7 @@ module spatz_fpu_sequencer
   /////////////////
 
   localparam int unsigned NrFPReg     = 32;
-  localparam int unsigned FPRRegWidth = cf_math_pkg::idx_width(NrFPReg);
+  localparam int unsigned FPRRegWidth = cc_pkg::idx_width(NrFPReg);
 
   logic [FPRRegWidth-1:0] fd, fs1, fs2, fs3;
   assign fd  = issue_req_i.data_op[7 + FPRRegWidth - 1:7];
@@ -584,11 +584,11 @@ module spatz_fpu_sequencer
 
   // Number of memory operations in the accelerator
   logic [2:0] acc_mem_cnt_q, acc_mem_cnt_d;
-  `FFARN(acc_mem_cnt_q, acc_mem_cnt_d, '0, clk_i, rst_ni)
+  `FF(acc_mem_cnt_q, acc_mem_cnt_d, '0, clk_i, rst_ni)
 
   // Number of store operations in the accelerator
   logic [2:0] acc_mem_str_cnt_q, acc_mem_str_cnt_d;
-  `FFARN(acc_mem_str_cnt_q, acc_mem_str_cnt_d, '0, clk_i, rst_ni)
+  `FF(acc_mem_str_cnt_q, acc_mem_str_cnt_d, '0, clk_i, rst_ni)
 
   // Is the current instruction a vector load?
   logic is_vector_load;
@@ -686,11 +686,12 @@ module spatz_fpu_sequencer
   logic       fp_move_result_valid_o;
   logic       fp_move_result_ready_i;
 
-  spill_register #(
-    .T(spatz_rsp_t)
+  cc_spill_register #(
+    .data_t(spatz_rsp_t)
   ) i_fp_move_register (
     .clk_i     (clk_i                 ),
     .rst_ni    (rst_ni                ),
+    .clr_i  (1'b0),
     .data_i    (fp_move_result_i      ),
     .valid_i   (fp_move_result_valid_i),
     .ready_o   (fp_move_result_ready_o),

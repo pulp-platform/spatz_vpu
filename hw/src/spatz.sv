@@ -15,7 +15,7 @@
 
 `define X_INTERFACE
 
-module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
+module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import cc_pkg::*; #(
     parameter int                  unsigned NrMemPorts          = 1,
     parameter bit                           RegisterRsp         = 0,
     // Memory request (VLSU)
@@ -163,8 +163,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   // When the responses from EX units are not committed to the VRF,
   // buffers store the metadata to commit to the VRF in later cycles
 
-  logic [$clog2(FpuBufDepth)-1:0] vfu_buf_usage;
-  logic [$clog2(VlsuBufDepth)-1:0] vlsu_buf_usage;
+  logic [cnt_width(FpuBufDepth)-1:0] vfu_buf_usage;
+  logic [cnt_width(VlsuBufDepth)-1:0] vlsu_buf_usage;
 
   typedef struct packed {
     vrf_data_t wdata;
@@ -505,15 +505,15 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   // Ack 1'b1 to the VFU as long as the buffer is not full
   assign vrf_vfu_wvalid = sb_we[VFU_VD_WD] && !vfu_buf_full;
 
-  fifo_v3 #(
-    .FALL_THROUGH (1'b0        ),
-    .dtype        (vfu_buf_t   ),
-    .DEPTH        (FpuBufDepth )
+  cc_fifo #(
+    .FallThrough (1'b0        ),
+    .data_t        (vfu_buf_t   ),
+    .Depth        (FpuBufDepth )
   ) i_vfu_buf (
     .clk_i      (clk_i                   ),
     .rst_ni     (rst_ni                  ),
+    .clr_i     (1'b0),
     .flush_i    (1'b0                    ),
-    .testmode_i (1'b0                    ),
     .full_o     (vfu_buf_full            ),
     .empty_o    (vfu_buf_empty           ),
     .usage_o    (vfu_buf_usage           ),
@@ -537,15 +537,15 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   assign vlsu_buf_pop = vrf_wvalid[VLSU_VD_WD1] && !vlsu_buf_empty;
   assign vrf_vlsu_wvalid = sb_we[VLSU_VD_WD1] && !vlsu_buf_full;
 
-  fifo_v3 #(
-    .FALL_THROUGH (1'b0         ),
-    .dtype        (vlsu_buf_t   ),
-    .DEPTH        (VlsuBufDepth )
+  cc_fifo #(
+    .FallThrough (1'b0         ),
+    .data_t        (vlsu_buf_t   ),
+    .Depth        (VlsuBufDepth )
   ) i_vlsu_buf (
     .clk_i      (clk_i                    ),
     .rst_ni     (rst_ni                   ),
+    .clr_i     (1'b0),
     .flush_i    (1'b0                     ),
-    .testmode_i (1'b0                     ),
     .full_o     (vlsu_buf_full            ),
     .empty_o    (vlsu_buf_empty           ),
     .usage_o    (vlsu_buf_usage           ),

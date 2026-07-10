@@ -199,13 +199,12 @@ module spatz_controller
   logic       req_buffer_ready, req_buffer_valid, req_buffer_pop;
 
   // One element wide instruction buffer
-  fall_through_register #(
-    .T(spatz_req_t)
+  cc_fall_through_register #(
+    .data_t(spatz_req_t)
   ) i_req_buffer (
     .clk_i     (clk_i                ),
     .rst_ni    (rst_ni               ),
     .clr_i     (1'b0                 ),
-    .testmode_i(1'b0                 ),
     .ready_o   (req_buffer_ready     ),
     .valid_o   (req_buffer_valid     ),
     .data_i    (decoder_rsp.spatz_req),
@@ -506,12 +505,13 @@ module spatz_controller
   logic                                   running_insn_full;
   `FF(running_insn_q, running_insn_d, '0)
 
-  find_first_one #(
-    .WIDTH(NrParallelInstructions)
+  cc_lzc #(
+    .Width(NrParallelInstructions),
+    .Mode (cc_pkg::LZC_TRAILING_ZERO_CNT)
   ) i_ffo_next_insn_id (
-    .in_i       (~running_insn_q  ),
-    .first_one_o(next_insn_id     ),
-    .no_ones_o  (running_insn_full)
+    .in_i    (~running_insn_q  ),
+    .cnt_o   (next_insn_id     ),
+    .empty_o (running_insn_full)
   );
 
   // Pop the buffer if we do not have a unit stall
@@ -640,11 +640,12 @@ module spatz_controller
   logic     vfu_rsp_valid;
   logic     vfu_rsp_ready;
 
-  spill_register #(
-    .T(vfu_rsp_t)
+  cc_spill_register #(
+    .data_t(vfu_rsp_t)
   ) i_vfu_scalar_response (
     .clk_i  (clk_i                          ),
     .rst_ni (rst_ni                         ),
+    .clr_i  (1'b0),
     .data_i (vfu_rsp_i                      ),
     .valid_i(vfu_rsp_valid_i && vfu_rsp_i.wb),
     .ready_o(vfu_rsp_ready_o                ),
@@ -656,12 +657,13 @@ module spatz_controller
   logic       rsp_valid_d;
   logic       rsp_ready_d;
   spatz_rsp_t rsp_d;
-  spill_register #(
-    .T     (spatz_rsp_t ),
+  cc_spill_register #(
+    .data_t     (spatz_rsp_t ),
     .Bypass(!RegisterRsp)
   ) i_spatz_rsp_register (
     .clk_i  (clk_i       ),
     .rst_ni (rst_ni      ),
+    .clr_i  (1'b0),
     .data_i (rsp_d       ),
     .valid_i(rsp_valid_d ),
     .ready_o(rsp_ready_d ),

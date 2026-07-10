@@ -8,6 +8,7 @@
 
 module spatz_vrf
   import spatz_pkg::*;
+  import cc_pkg::*;
   #(
     parameter int unsigned NrReadPorts  = 5,
     parameter int unsigned NrWritePorts = 3,
@@ -24,7 +25,7 @@ module spatz_vrf
     output logic      [NrWritePorts-1:0] wvalid_o,
 `ifdef BUF_FPU
     // Signal to track if  result can be buffered or not
-    input  logic      [$clog2(FpuBufDepth)-1:0] fpu_buf_usage_i,
+    input  logic      [cnt_width(FpuBufDepth)-1:0] fpu_buf_usage_i,
 `endif
     // Read ports
     input  vrf_addr_t [NrReadPorts-1:0]  raddr_i,

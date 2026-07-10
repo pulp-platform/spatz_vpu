@@ -9,7 +9,7 @@
 // must be indexed with an ID that identifies it within the ROB.
 
 module reorder_buffer
-  import cf_math_pkg::idx_width;
+  import cc_pkg::idx_width;
 #(
   parameter int unsigned DataWidth = 0,
   parameter int unsigned NumWords  = 0,
