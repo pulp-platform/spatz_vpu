@@ -943,8 +943,12 @@ module spatz_doublebw_vlsu
       vrf_req_d[intf].rsp_valid = commit_insn_valid && &commit_finished_d[intf] && mem_insn_finished_d[commit_insn_q.id];
       vrf_req_d[intf].commit_vl = commit_insn_q.vl;
 
-      // Request indexes
-      vrf_re_o[intf][1] = mem_is_indexed;
+      // Request indexes. Once this interface has no more elements left to
+      // process, stop requesting: otherwise this interface's continuous
+      // index-VRF read request keeps winning the shared read port against
+      // the other interface (which may still have genuine outstanding
+      // work), starving it of vrf_rvalid_i forever.
+      vrf_re_o[intf][1] = mem_is_indexed && |mem_operation_valid[intf];
 
       // Count which vs2 element we should load (indexed loads)
       vs2_elem_id_d = vs2_elem_id_q;
