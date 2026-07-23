@@ -13,8 +13,6 @@ dependencies:
   common_cells:       { git: "https://github.com/pulp-platform/common_cells.git",       rev: master             }
   FPnew:              { git: "https://github.com/pulp-platform/cvfpu.git",              rev: common-cells-v2    }
   tech_cells_generic: { git: "https://github.com/pulp-platform/tech_cells_generic.git", version: 0.2.14         }
-  snitch:             { path: "hw/ip/snitch"                                                                    }
-  reqrsp_interface:   { path: "hw/ip/reqrsp_interface"                                                          }
 
 workspace:
   checkout_dir: "hw/ip"
@@ -25,7 +23,9 @@ sources:
     files:
     # Level 0
     - hw/ip/snitch/src/riscv_instr.sv
-    - hw/src/reorder_buffer.sv
+    - target: mempool
+      files:
+        - hw/src/reorder_buffer.sv
     - hw/src/rvv_pkg.sv
     # Level 1
     - hw/src/generated/spatz_pkg.sv
