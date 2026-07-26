@@ -1,0 +1,36 @@
+# Copyright 2026 ETH Zurich and University of Bologna.
+# Solderpad Hardware License, Version 0.51, see LICENSE for details.
+# SPDX-License-Identifier: SHL-0.51
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spatz-core"
+description = "Spatz VPU scripts and utilities"
+dynamic = ["version"]
+requires-python = ">=3.11"
+dependencies = [
+    # Alphabetically sorted.
+    "dataclasses",
+    "hjson",
+    "jsonref",
+    "jsonschema",
+    "mako",
+    "termcolor",
+    "torch",
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.setuptools]
+packages = []
