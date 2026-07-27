@@ -19,8 +19,7 @@ workspace:
 
 sources:
   ## hw/ip/spatz ##
-  - target: spatz
-    files:
+  - files:
     # Level 0
     - hw/ip/snitch/src/riscv_instr.sv
     - target: mempool
