@@ -517,7 +517,7 @@ module spatz_fpu_sequencer
   logic [AddrWidth-1:0] fp_lsu_qaddr;
   logic [DataWidth-1:0] fp_lsu_qdata;
   logic [1:0]           fp_lsu_qsize;
-  logic [3:0]           fp_lsu_qamo; // Underlying type of snitch_pkg::amo_op_e — update if that typedef changes.
+  snitch_pkg::amo_op_e  fp_lsu_qamo;
   logic fp_lsu_qvalid;
   logic fp_lsu_qready;
 
@@ -636,7 +636,7 @@ module spatz_fpu_sequencer
 `endif
     fp_lsu_qdata   = fpr_rdata[1];
     fp_lsu_qsize   = ls_size;
-    fp_lsu_qamo    = 4'h0; // snitch_pkg::AMONone
+    fp_lsu_qamo    = snitch_pkg::AMONone;
     fp_lsu_qvalid  = (is_load || is_store) && operands_available && !vlsu_stall;
 
     acc_mem_cnt_d     = acc_mem_cnt_q;
