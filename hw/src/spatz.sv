@@ -38,6 +38,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     parameter type                          x_result_t          = logic,
     /// FPU configuration.
     parameter fpu_implementation_t          FPUImplementation   = fpu_implementation_t'(0),
+    /// Address width of the scalar FPU LSU request interface.
+    parameter int                  unsigned AddrWidth           = 32,
     // Derived parameters. DO NOT CHANGE!
     parameter int                  unsigned NumOutstandingLoads = 8
   ) (
@@ -358,6 +360,7 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
       .spatz_issue_req_t  (spatz_issue_req_t   ),
       .spatz_issue_rsp_t  (spatz_issue_rsp_t   ),
       .spatz_rsp_t        (spatz_rsp_t         ),
+      .AddrWidth          (AddrWidth           ),
       .NumOutstandingLoads(NumOutstandingLoads )
     ) i_fpu_sequencer (
       .clk_i                    ( clk_i                  ),
