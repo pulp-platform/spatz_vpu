@@ -71,6 +71,7 @@ module spatz_fpu_sequencer
 
   localparam int unsigned NrFPReg     = 32;
   localparam int unsigned FPRRegWidth = cc_pkg::idx_width(NrFPReg);
+  localparam int unsigned UserWidth   = $bits(fp_lsu_mem_req_o.q.user);
 
   logic [FPRRegWidth-1:0] fd, fs1, fs2, fs3;
   assign fd  = issue_req_i.data_op[7 + FPRRegWidth - 1:7];
@@ -194,41 +195,41 @@ module spatz_fpu_sequencer
     if (issue_valid_i)
       unique casez (issue_req_i.data_op)
         // Byte Precision Floating-Point
-        riscv_instr::FADD_B,
-        riscv_instr::FSUB_B,
-        riscv_instr::FMUL_B,
-        riscv_instr::FDIV_B,
-        riscv_instr::FSQRT_B,
-        riscv_instr::FSGNJ_B,
-        riscv_instr::FSGNJN_B,
-        riscv_instr::FSGNJX_B,
-        riscv_instr::FMIN_B,
-        riscv_instr::FMAX_B,
-        riscv_instr::FCLASS_B,
-        riscv_instr::FLE_B,
-        riscv_instr::FLT_B,
-        riscv_instr::FEQ_B,
-        riscv_instr::FCVT_B_W,
-        riscv_instr::FCVT_B_WU,
-        riscv_instr::FCVT_W_B,
-        riscv_instr::FCVT_WU_B,
-        riscv_instr::FMADD_B,
-        riscv_instr::FMSUB_B,
-        riscv_instr::FNMSUB_B,
-        riscv_instr::FNMADD_B,
-        riscv_instr::FCVT_B_H,
-        riscv_instr::FCVT_H_B: begin
-          if (RVF && (!(issue_req_i.data_op inside {riscv_instr::FDIV_B, riscv_instr::FSQRT_B}) || FDivSqrt)) begin
-            use_fs1 = !(issue_req_i.data_op inside {riscv_instr::FCVT_B_W, riscv_instr::FCVT_B_WU});
-            use_fs2 = !(issue_req_i.data_op inside {riscv_instr::FCLASS_B});
-            use_fs3 = issue_req_i.data_op inside {riscv_instr::FMADD_B, riscv_instr::FMSUB_B, riscv_instr::FNMSUB_B, riscv_instr::FNMADD_B};
-            use_fd  = !(issue_req_i.data_op inside {riscv_instr::FCLASS_B, riscv_instr::FLE_B, riscv_instr::FLT_B, riscv_instr::FEQ_B, riscv_instr::FCVT_W_B, riscv_instr::FCVT_WU_B});
-            use_rd  =   issue_req_i.data_op inside {riscv_instr::FCLASS_B, riscv_instr::FLE_B, riscv_instr::FLT_B, riscv_instr::FEQ_B, riscv_instr::FCVT_W_B, riscv_instr::FCVT_WU_B};
+        spatz_riscv_instr::FADD_B,
+        spatz_riscv_instr::FSUB_B,
+        spatz_riscv_instr::FMUL_B,
+        spatz_riscv_instr::FDIV_B,
+        spatz_riscv_instr::FSQRT_B,
+        spatz_riscv_instr::FSGNJ_B,
+        spatz_riscv_instr::FSGNJN_B,
+        spatz_riscv_instr::FSGNJX_B,
+        spatz_riscv_instr::FMIN_B,
+        spatz_riscv_instr::FMAX_B,
+        spatz_riscv_instr::FCLASS_B,
+        spatz_riscv_instr::FLE_B,
+        spatz_riscv_instr::FLT_B,
+        spatz_riscv_instr::FEQ_B,
+        spatz_riscv_instr::FCVT_B_W,
+        spatz_riscv_instr::FCVT_B_WU,
+        spatz_riscv_instr::FCVT_W_B,
+        spatz_riscv_instr::FCVT_WU_B,
+        spatz_riscv_instr::FMADD_B,
+        spatz_riscv_instr::FMSUB_B,
+        spatz_riscv_instr::FNMSUB_B,
+        spatz_riscv_instr::FNMADD_B,
+        spatz_riscv_instr::FCVT_B_H,
+        spatz_riscv_instr::FCVT_H_B: begin
+          if (RVF && (!(issue_req_i.data_op inside {spatz_riscv_instr::FDIV_B, spatz_riscv_instr::FSQRT_B}) || FDivSqrt)) begin
+            use_fs1 = !(issue_req_i.data_op inside {spatz_riscv_instr::FCVT_B_W, spatz_riscv_instr::FCVT_B_WU});
+            use_fs2 = !(issue_req_i.data_op inside {spatz_riscv_instr::FCLASS_B});
+            use_fs3 = issue_req_i.data_op inside {spatz_riscv_instr::FMADD_B, spatz_riscv_instr::FMSUB_B, spatz_riscv_instr::FNMSUB_B, spatz_riscv_instr::FNMADD_B};
+            use_fd  = !(issue_req_i.data_op inside {spatz_riscv_instr::FCLASS_B, spatz_riscv_instr::FLE_B, spatz_riscv_instr::FLT_B, spatz_riscv_instr::FEQ_B, spatz_riscv_instr::FCVT_W_B, spatz_riscv_instr::FCVT_WU_B});
+            use_rd  =   issue_req_i.data_op inside {spatz_riscv_instr::FCLASS_B, spatz_riscv_instr::FLE_B, spatz_riscv_instr::FLT_B, spatz_riscv_instr::FEQ_B, spatz_riscv_instr::FCVT_W_B, spatz_riscv_instr::FCVT_WU_B};
           end else begin
             illegal_inst = 1'b1;
           end
         end
-        riscv_instr::FMV_X_B: begin
+        spatz_riscv_instr::FMV_X_B: begin
           if (RVF) begin
             use_rd  = 1'b1;
             use_fs1 = 1'b1;
@@ -237,7 +238,7 @@ module spatz_fpu_sequencer
             illegal_inst = 1'b1;
           end
         end
-        riscv_instr::FMV_B_X: begin
+        spatz_riscv_instr::FMV_B_X: begin
           if (RVF) begin
             use_fd  = 1'b1;
             is_move = 1'b1;
@@ -247,41 +248,41 @@ module spatz_fpu_sequencer
         end
 
         // Half Precision Floating-Point
-        riscv_instr::FADD_H,
-        riscv_instr::FSUB_H,
-        riscv_instr::FMUL_H,
-        riscv_instr::FDIV_H,
-        riscv_instr::FSQRT_H,
-        riscv_instr::FSGNJ_H,
-        riscv_instr::FSGNJN_H,
-        riscv_instr::FSGNJX_H,
-        riscv_instr::FMIN_H,
-        riscv_instr::FMAX_H,
-        riscv_instr::FCLASS_H,
-        riscv_instr::FLE_H,
-        riscv_instr::FLT_H,
-        riscv_instr::FEQ_H,
-        riscv_instr::FCVT_H_W,
-        riscv_instr::FCVT_H_WU,
-        riscv_instr::FCVT_W_H,
-        riscv_instr::FCVT_WU_H,
-        riscv_instr::FMADD_H,
-        riscv_instr::FMSUB_H,
-        riscv_instr::FNMSUB_H,
-        riscv_instr::FNMADD_H,
-        riscv_instr::FCVT_H_S,
-        riscv_instr::FCVT_S_H: begin
-          if (RVF && (!(issue_req_i.data_op inside {riscv_instr::FDIV_H, riscv_instr::FSQRT_H}) || FDivSqrt)) begin
-            use_fs1 = !(issue_req_i.data_op inside {riscv_instr::FCVT_H_W, riscv_instr::FCVT_H_WU});
-            use_fs2 = !(issue_req_i.data_op inside {riscv_instr::FCLASS_H});
-            use_fs3 = issue_req_i.data_op inside {riscv_instr::FMADD_H, riscv_instr::FMSUB_H, riscv_instr::FNMSUB_H, riscv_instr::FNMADD_H};
-            use_fd  = !(issue_req_i.data_op inside {riscv_instr::FCLASS_H, riscv_instr::FLE_H, riscv_instr::FLT_H, riscv_instr::FEQ_H, riscv_instr::FCVT_W_H, riscv_instr::FCVT_WU_H});
-            use_rd  =   issue_req_i.data_op inside {riscv_instr::FCLASS_H, riscv_instr::FLE_H, riscv_instr::FLT_H, riscv_instr::FEQ_H, riscv_instr::FCVT_W_H, riscv_instr::FCVT_WU_H};
+        spatz_riscv_instr::FADD_H,
+        spatz_riscv_instr::FSUB_H,
+        spatz_riscv_instr::FMUL_H,
+        spatz_riscv_instr::FDIV_H,
+        spatz_riscv_instr::FSQRT_H,
+        spatz_riscv_instr::FSGNJ_H,
+        spatz_riscv_instr::FSGNJN_H,
+        spatz_riscv_instr::FSGNJX_H,
+        spatz_riscv_instr::FMIN_H,
+        spatz_riscv_instr::FMAX_H,
+        spatz_riscv_instr::FCLASS_H,
+        spatz_riscv_instr::FLE_H,
+        spatz_riscv_instr::FLT_H,
+        spatz_riscv_instr::FEQ_H,
+        spatz_riscv_instr::FCVT_H_W,
+        spatz_riscv_instr::FCVT_H_WU,
+        spatz_riscv_instr::FCVT_W_H,
+        spatz_riscv_instr::FCVT_WU_H,
+        spatz_riscv_instr::FMADD_H,
+        spatz_riscv_instr::FMSUB_H,
+        spatz_riscv_instr::FNMSUB_H,
+        spatz_riscv_instr::FNMADD_H,
+        spatz_riscv_instr::FCVT_H_S,
+        spatz_riscv_instr::FCVT_S_H: begin
+          if (RVF && (!(issue_req_i.data_op inside {spatz_riscv_instr::FDIV_H, spatz_riscv_instr::FSQRT_H}) || FDivSqrt)) begin
+            use_fs1 = !(issue_req_i.data_op inside {spatz_riscv_instr::FCVT_H_W, spatz_riscv_instr::FCVT_H_WU});
+            use_fs2 = !(issue_req_i.data_op inside {spatz_riscv_instr::FCLASS_H});
+            use_fs3 = issue_req_i.data_op inside {spatz_riscv_instr::FMADD_H, spatz_riscv_instr::FMSUB_H, spatz_riscv_instr::FNMSUB_H, spatz_riscv_instr::FNMADD_H};
+            use_fd  = !(issue_req_i.data_op inside {spatz_riscv_instr::FCLASS_H, spatz_riscv_instr::FLE_H, spatz_riscv_instr::FLT_H, spatz_riscv_instr::FEQ_H, spatz_riscv_instr::FCVT_W_H, spatz_riscv_instr::FCVT_WU_H});
+            use_rd  =   issue_req_i.data_op inside {spatz_riscv_instr::FCLASS_H, spatz_riscv_instr::FLE_H, spatz_riscv_instr::FLT_H, spatz_riscv_instr::FEQ_H, spatz_riscv_instr::FCVT_W_H, spatz_riscv_instr::FCVT_WU_H};
           end else begin
             illegal_inst = 1'b1;
           end
         end
-        riscv_instr::FMV_X_H: begin
+        spatz_riscv_instr::FMV_X_H: begin
           if (RVF) begin
             use_rd  = 1'b1;
             use_fs1 = 1'b1;
@@ -290,7 +291,7 @@ module spatz_fpu_sequencer
             illegal_inst = 1'b1;
           end
         end
-        riscv_instr::FMV_H_X: begin
+        spatz_riscv_instr::FMV_H_X: begin
           if (RVF) begin
             use_fd  = 1'b1;
             is_move = 1'b1;
@@ -300,41 +301,41 @@ module spatz_fpu_sequencer
         end
 
         // Single Precision Floating-Point
-        riscv_instr::FADD_S,
-        riscv_instr::FSUB_S,
-        riscv_instr::FMUL_S,
-        riscv_instr::FDIV_S,
-        riscv_instr::FSQRT_S,
-        riscv_instr::FSGNJ_S,
-        riscv_instr::FSGNJN_S,
-        riscv_instr::FSGNJX_S,
-        riscv_instr::FMIN_S,
-        riscv_instr::FMAX_S,
-        riscv_instr::FCLASS_S,
-        riscv_instr::FLE_S,
-        riscv_instr::FLT_S,
-        riscv_instr::FEQ_S,
-        riscv_instr::FCVT_S_W,
-        riscv_instr::FCVT_S_WU,
-        riscv_instr::FCVT_W_S,
-        riscv_instr::FCVT_WU_S,
-        riscv_instr::FMADD_S,
-        riscv_instr::FMSUB_S,
-        riscv_instr::FNMSUB_S,
-        riscv_instr::FNMADD_S,
-        riscv_instr::FCVT_S_D,
-        riscv_instr::FCVT_D_S: begin
-          if (RVF && (!(issue_req_i.data_op inside {riscv_instr::FDIV_S, riscv_instr::FSQRT_S}) || FDivSqrt)) begin
-            use_fs1 = !(issue_req_i.data_op inside {riscv_instr::FCVT_S_W, riscv_instr::FCVT_S_WU});
-            use_fs2 = !(issue_req_i.data_op inside {riscv_instr::FCLASS_S});
-            use_fs3 = issue_req_i.data_op inside {riscv_instr::FMADD_S, riscv_instr::FMSUB_S, riscv_instr::FNMSUB_S, riscv_instr::FNMADD_S};
-            use_fd  = !(issue_req_i.data_op inside {riscv_instr::FCLASS_S, riscv_instr::FLE_S, riscv_instr::FLT_S, riscv_instr::FEQ_S, riscv_instr::FCVT_W_S, riscv_instr::FCVT_WU_S});
-            use_rd  =   issue_req_i.data_op inside {riscv_instr::FCLASS_S, riscv_instr::FLE_S, riscv_instr::FLT_S, riscv_instr::FEQ_S, riscv_instr::FCVT_W_S, riscv_instr::FCVT_WU_S};
+        spatz_riscv_instr::FADD_S,
+        spatz_riscv_instr::FSUB_S,
+        spatz_riscv_instr::FMUL_S,
+        spatz_riscv_instr::FDIV_S,
+        spatz_riscv_instr::FSQRT_S,
+        spatz_riscv_instr::FSGNJ_S,
+        spatz_riscv_instr::FSGNJN_S,
+        spatz_riscv_instr::FSGNJX_S,
+        spatz_riscv_instr::FMIN_S,
+        spatz_riscv_instr::FMAX_S,
+        spatz_riscv_instr::FCLASS_S,
+        spatz_riscv_instr::FLE_S,
+        spatz_riscv_instr::FLT_S,
+        spatz_riscv_instr::FEQ_S,
+        spatz_riscv_instr::FCVT_S_W,
+        spatz_riscv_instr::FCVT_S_WU,
+        spatz_riscv_instr::FCVT_W_S,
+        spatz_riscv_instr::FCVT_WU_S,
+        spatz_riscv_instr::FMADD_S,
+        spatz_riscv_instr::FMSUB_S,
+        spatz_riscv_instr::FNMSUB_S,
+        spatz_riscv_instr::FNMADD_S,
+        spatz_riscv_instr::FCVT_S_D,
+        spatz_riscv_instr::FCVT_D_S: begin
+          if (RVF && (!(issue_req_i.data_op inside {spatz_riscv_instr::FDIV_S, spatz_riscv_instr::FSQRT_S}) || FDivSqrt)) begin
+            use_fs1 = !(issue_req_i.data_op inside {spatz_riscv_instr::FCVT_S_W, spatz_riscv_instr::FCVT_S_WU});
+            use_fs2 = !(issue_req_i.data_op inside {spatz_riscv_instr::FCLASS_S});
+            use_fs3 = issue_req_i.data_op inside {spatz_riscv_instr::FMADD_S, spatz_riscv_instr::FMSUB_S, spatz_riscv_instr::FNMSUB_S, spatz_riscv_instr::FNMADD_S};
+            use_fd  = !(issue_req_i.data_op inside {spatz_riscv_instr::FCLASS_S, spatz_riscv_instr::FLE_S, spatz_riscv_instr::FLT_S, spatz_riscv_instr::FEQ_S, spatz_riscv_instr::FCVT_W_S, spatz_riscv_instr::FCVT_WU_S});
+            use_rd  =   issue_req_i.data_op inside {spatz_riscv_instr::FCLASS_S, spatz_riscv_instr::FLE_S, spatz_riscv_instr::FLT_S, spatz_riscv_instr::FEQ_S, spatz_riscv_instr::FCVT_W_S, spatz_riscv_instr::FCVT_WU_S};
           end else begin
             illegal_inst = 1'b1;
           end
         end
-        // riscv_instr::FMV_X_S: begin
+        // spatz_riscv_instr::FMV_X_S: begin
         //   if (RVF) begin
         //     use_rd  = 1'b1;
         //     use_fs1 = 1'b1;
@@ -343,7 +344,7 @@ module spatz_fpu_sequencer
         //     illegal_inst = 1'b1;
         //   end
         // end
-        // riscv_instr::FMV_S_X: begin
+        // spatz_riscv_instr::FMV_S_X: begin
         //   if (RVF) begin
         //     use_fd  = 1'b1;
         //     is_move = 1'b1;
@@ -353,103 +354,103 @@ module spatz_fpu_sequencer
         // end
 
         // Double Precision Floating-Point
-        riscv_instr::FADD_D,
-        riscv_instr::FSUB_D,
-        riscv_instr::FMUL_D,
-        riscv_instr::FDIV_D,
-        riscv_instr::FSQRT_D,
-        riscv_instr::FSGNJ_D,
-        riscv_instr::FSGNJN_D,
-        riscv_instr::FSGNJX_D,
-        riscv_instr::FMIN_D,
-        riscv_instr::FMAX_D,
-        riscv_instr::FCLASS_D,
-        riscv_instr::FLE_D,
-        riscv_instr::FLT_D,
-        riscv_instr::FEQ_D,
-        riscv_instr::FCVT_D_W,
-        riscv_instr::FCVT_D_WU,
-        riscv_instr::FCVT_W_D,
-        riscv_instr::FCVT_WU_D,
-        riscv_instr::FMADD_D,
-        riscv_instr::FMSUB_D,
-        riscv_instr::FNMSUB_D,
-        riscv_instr::FNMADD_D: begin
-          if (RVD && (!(issue_req_i.data_op inside {riscv_instr::FDIV_D, riscv_instr::FSQRT_D}) || FDivSqrt)) begin
-            use_fs1 = !(issue_req_i.data_op inside {riscv_instr::FCVT_D_W, riscv_instr::FCVT_D_WU});
+        spatz_riscv_instr::FADD_D,
+        spatz_riscv_instr::FSUB_D,
+        spatz_riscv_instr::FMUL_D,
+        spatz_riscv_instr::FDIV_D,
+        spatz_riscv_instr::FSQRT_D,
+        spatz_riscv_instr::FSGNJ_D,
+        spatz_riscv_instr::FSGNJN_D,
+        spatz_riscv_instr::FSGNJX_D,
+        spatz_riscv_instr::FMIN_D,
+        spatz_riscv_instr::FMAX_D,
+        spatz_riscv_instr::FCLASS_D,
+        spatz_riscv_instr::FLE_D,
+        spatz_riscv_instr::FLT_D,
+        spatz_riscv_instr::FEQ_D,
+        spatz_riscv_instr::FCVT_D_W,
+        spatz_riscv_instr::FCVT_D_WU,
+        spatz_riscv_instr::FCVT_W_D,
+        spatz_riscv_instr::FCVT_WU_D,
+        spatz_riscv_instr::FMADD_D,
+        spatz_riscv_instr::FMSUB_D,
+        spatz_riscv_instr::FNMSUB_D,
+        spatz_riscv_instr::FNMADD_D: begin
+          if (RVD && (!(issue_req_i.data_op inside {spatz_riscv_instr::FDIV_D, spatz_riscv_instr::FSQRT_D}) || FDivSqrt)) begin
+            use_fs1 = !(issue_req_i.data_op inside {spatz_riscv_instr::FCVT_D_W, spatz_riscv_instr::FCVT_D_WU});
             use_fs2 = 1'b1;
-            use_fs3 = issue_req_i.data_op inside {riscv_instr::FMADD_D, riscv_instr::FMSUB_D, riscv_instr::FNMSUB_D, riscv_instr::FNMADD_D};
-            use_fd  = !(issue_req_i.data_op inside {riscv_instr::FCLASS_D, riscv_instr::FLE_D, riscv_instr::FLT_D, riscv_instr::FEQ_D, riscv_instr::FCVT_W_D, riscv_instr::FCVT_WU_D});
-            use_rd  =   issue_req_i.data_op inside {riscv_instr::FCLASS_D, riscv_instr::FLE_D, riscv_instr::FLT_D, riscv_instr::FEQ_D, riscv_instr::FCVT_W_D, riscv_instr::FCVT_WU_D};
+            use_fs3 = issue_req_i.data_op inside {spatz_riscv_instr::FMADD_D, spatz_riscv_instr::FMSUB_D, spatz_riscv_instr::FNMSUB_D, spatz_riscv_instr::FNMADD_D};
+            use_fd  = !(issue_req_i.data_op inside {spatz_riscv_instr::FCLASS_D, spatz_riscv_instr::FLE_D, spatz_riscv_instr::FLT_D, spatz_riscv_instr::FEQ_D, spatz_riscv_instr::FCVT_W_D, spatz_riscv_instr::FCVT_WU_D});
+            use_rd  =   issue_req_i.data_op inside {spatz_riscv_instr::FCLASS_D, spatz_riscv_instr::FLE_D, spatz_riscv_instr::FLT_D, spatz_riscv_instr::FEQ_D, spatz_riscv_instr::FCVT_W_D, spatz_riscv_instr::FCVT_WU_D};
           end else begin
             illegal_inst = 1'b1;
           end
         end
 
         // Floating-Point Load/Store
-        riscv_instr::FLB,
-        riscv_instr::FLH,
-        riscv_instr::FLW,
-        riscv_instr::FLD: begin
+        spatz_riscv_instr::FLB,
+        spatz_riscv_instr::FLH,
+        spatz_riscv_instr::FLW,
+        spatz_riscv_instr::FLD: begin
           use_fd = 1'b1;
           casez (issue_req_i.data_op)
-            riscv_instr::FLB: ls_size          = Byte;
-            riscv_instr::FLH: ls_size          = HalfWord;
-            riscv_instr::FLW: ls_size          = Word;
-            riscv_instr::FLD: if (RVD) ls_size = Double;
+            spatz_riscv_instr::FLB: ls_size          = Byte;
+            spatz_riscv_instr::FLH: ls_size          = HalfWord;
+            spatz_riscv_instr::FLW: ls_size          = Word;
+            spatz_riscv_instr::FLD: if (RVD) ls_size = Double;
             default:;
           endcase
           is_load      = 1'b1;
-          illegal_inst = !RVD && issue_req_i.data_op inside {riscv_instr::FLD};
+          illegal_inst = !RVD && issue_req_i.data_op inside {spatz_riscv_instr::FLD};
         end
-        riscv_instr::FSB,
-        riscv_instr::FSH,
-        riscv_instr::FSW,
-        riscv_instr::FSD: begin
+        spatz_riscv_instr::FSB,
+        spatz_riscv_instr::FSH,
+        spatz_riscv_instr::FSW,
+        spatz_riscv_instr::FSD: begin
           use_fs2 = 1'b1;
           casez (issue_req_i.data_op)
-            riscv_instr::FSB: ls_size          = Byte;
-            riscv_instr::FSH: ls_size          = HalfWord;
-            riscv_instr::FSW: ls_size          = Word;
-            riscv_instr::FSD: if (RVD) ls_size = Double;
+            spatz_riscv_instr::FSB: ls_size          = Byte;
+            spatz_riscv_instr::FSH: ls_size          = HalfWord;
+            spatz_riscv_instr::FSW: ls_size          = Word;
+            spatz_riscv_instr::FSD: if (RVD) ls_size = Double;
             default:;
           endcase
           is_store     = 1'b1;
-          illegal_inst = !RVD && issue_req_i.data_op inside {riscv_instr::FSD};
+          illegal_inst = !RVD && issue_req_i.data_op inside {spatz_riscv_instr::FSD};
         end
 
         // Vector instructions with FP scalar operand
-        riscv_instr::VFADD_VF,
-        riscv_instr::VFSUB_VF,
-        riscv_instr::VFMIN_VF,
-        riscv_instr::VFMAX_VF,
-        riscv_instr::VFSGNJ_VF,
-        riscv_instr::VFSGNJN_VF,
-        riscv_instr::VFSGNJX_VF,
-        riscv_instr::VFSLIDE1UP_VF,
-        riscv_instr::VFSLIDE1DOWN_VF,
-        riscv_instr::VFMV_V_F,
-        riscv_instr::VFMV_S_F,
-        riscv_instr::VFMUL_VF,
-        riscv_instr::VFRSUB_VF,
-        riscv_instr::VFMADD_VF,
-        riscv_instr::VFNMADD_VF,
-        riscv_instr::VFMSUB_VF,
-        riscv_instr::VFNMSUB_VF,
-        riscv_instr::VFMACC_VF,
-        riscv_instr::VFNMACC_VF,
-        riscv_instr::VFMSAC_VF,
-        riscv_instr::VFNMSAC_VF,
-        riscv_instr::VFWADD_VF,
-        riscv_instr::VFWADD_WF,
-        riscv_instr::VFWSUB_VF,
-        riscv_instr::VFWSUB_WF,
-        riscv_instr::VFWMUL_VF,
-        riscv_instr::VFWMACC_VF,
-        riscv_instr::VFWNMACC_VF,
-        riscv_instr::VFWMSAC_VF,
-        // riscv_instr::VFWDOTP_VF,
-        riscv_instr::VFWNMSAC_VF: begin
+        spatz_riscv_instr::VFADD_VF,
+        spatz_riscv_instr::VFSUB_VF,
+        spatz_riscv_instr::VFMIN_VF,
+        spatz_riscv_instr::VFMAX_VF,
+        spatz_riscv_instr::VFSGNJ_VF,
+        spatz_riscv_instr::VFSGNJN_VF,
+        spatz_riscv_instr::VFSGNJX_VF,
+        spatz_riscv_instr::VFSLIDE1UP_VF,
+        spatz_riscv_instr::VFSLIDE1DOWN_VF,
+        spatz_riscv_instr::VFMV_V_F,
+        spatz_riscv_instr::VFMV_S_F,
+        spatz_riscv_instr::VFMUL_VF,
+        spatz_riscv_instr::VFRSUB_VF,
+        spatz_riscv_instr::VFMADD_VF,
+        spatz_riscv_instr::VFNMADD_VF,
+        spatz_riscv_instr::VFMSUB_VF,
+        spatz_riscv_instr::VFNMSUB_VF,
+        spatz_riscv_instr::VFMACC_VF,
+        spatz_riscv_instr::VFNMACC_VF,
+        spatz_riscv_instr::VFMSAC_VF,
+        spatz_riscv_instr::VFNMSAC_VF,
+        spatz_riscv_instr::VFWADD_VF,
+        spatz_riscv_instr::VFWADD_WF,
+        spatz_riscv_instr::VFWSUB_VF,
+        spatz_riscv_instr::VFWSUB_WF,
+        spatz_riscv_instr::VFWMUL_VF,
+        spatz_riscv_instr::VFWMACC_VF,
+        spatz_riscv_instr::VFWNMACC_VF,
+        spatz_riscv_instr::VFWMSAC_VF,
+        // spatz_riscv_instr::VFWDOTP_VF,
+        spatz_riscv_instr::VFWNMSAC_VF: begin
           if (RVF) begin
             use_fs1 = 1'b1;
           end else begin
@@ -458,7 +459,7 @@ module spatz_fpu_sequencer
         end
 
         // Move to the FPR
-        riscv_instr::VFMV_F_S: begin
+        spatz_riscv_instr::VFMV_F_S: begin
           use_fd = 1'b1;
         end
 
@@ -517,7 +518,7 @@ module spatz_fpu_sequencer
   logic [AddrWidth-1:0] fp_lsu_qaddr;
   logic [DataWidth-1:0] fp_lsu_qdata;
   logic [1:0]           fp_lsu_qsize;
-  snitch_pkg::amo_op_e  fp_lsu_qamo;
+  lsu_pkg::amo_op_e     fp_lsu_qamo;
   logic fp_lsu_qvalid;
   logic fp_lsu_qready;
 
@@ -536,11 +537,10 @@ module spatz_fpu_sequencer
   logic                 mem_perror;
   logic [IdWidth-1:0]   mem_pid;
 
-  snitch_lsu #(
+  lsu #(
     .AddrWidth           (AddrWidth           ),
     .DataWidth           (FLEN                ),
-    .dreq_t              (dreq_t              ),
-    .drsp_t              (drsp_t              ),
+    .UserWidth           (UserWidth           ),
     .tag_t               (logic [4:0]         ),
     .NumOutstandingMem   (NumOutstandingLoads ),
     .NumOutstandingLoads (NumOutstandingLoads ),
@@ -593,18 +593,18 @@ module spatz_fpu_sequencer
   // Is the current instruction a vector load?
   logic is_vector_load;
   assign is_vector_load = issue_req_i.data_op inside
-    {riscv_instr::VLE8_V, riscv_instr::VLE16_V, riscv_instr::VLE32_V, riscv_instr::VLE64_V,
-    riscv_instr::VLSE8_V, riscv_instr::VLSE16_V, riscv_instr::VLSE32_V, riscv_instr::VLSE64_V,
-    riscv_instr::VLOXEI8_V, riscv_instr::VLOXEI16_V, riscv_instr::VLOXEI32_V, riscv_instr::VLOXEI64_V,
-    riscv_instr::VLUXEI8_V, riscv_instr::VLUXEI16_V, riscv_instr::VLUXEI32_V, riscv_instr::VLUXEI64_V};
+    {spatz_riscv_instr::VLE8_V, spatz_riscv_instr::VLE16_V, spatz_riscv_instr::VLE32_V, spatz_riscv_instr::VLE64_V,
+    spatz_riscv_instr::VLSE8_V, spatz_riscv_instr::VLSE16_V, spatz_riscv_instr::VLSE32_V, spatz_riscv_instr::VLSE64_V,
+    spatz_riscv_instr::VLOXEI8_V, spatz_riscv_instr::VLOXEI16_V, spatz_riscv_instr::VLOXEI32_V, spatz_riscv_instr::VLOXEI64_V,
+    spatz_riscv_instr::VLUXEI8_V, spatz_riscv_instr::VLUXEI16_V, spatz_riscv_instr::VLUXEI32_V, spatz_riscv_instr::VLUXEI64_V};
 
   // Is the current instruction a vector store?
   logic is_vector_store;
   assign is_vector_store = issue_req_i.data_op inside
-    {riscv_instr::VSE8_V, riscv_instr::VSE16_V, riscv_instr::VSE32_V, riscv_instr::VSE64_V,
-    riscv_instr::VSSE8_V, riscv_instr::VSSE16_V, riscv_instr::VSSE32_V, riscv_instr::VSSE64_V,
-    riscv_instr::VSOXEI8_V, riscv_instr::VSOXEI16_V, riscv_instr::VSOXEI32_V, riscv_instr::VSOXEI64_V,
-    riscv_instr::VSUXEI8_V, riscv_instr::VSUXEI16_V, riscv_instr::VSUXEI32_V, riscv_instr::VSUXEI64_V};
+    {spatz_riscv_instr::VSE8_V, spatz_riscv_instr::VSE16_V, spatz_riscv_instr::VSE32_V, spatz_riscv_instr::VSE64_V,
+    spatz_riscv_instr::VSSE8_V, spatz_riscv_instr::VSSE16_V, spatz_riscv_instr::VSSE32_V, spatz_riscv_instr::VSSE64_V,
+    spatz_riscv_instr::VSOXEI8_V, spatz_riscv_instr::VSOXEI16_V, spatz_riscv_instr::VSOXEI32_V, spatz_riscv_instr::VSOXEI64_V,
+    spatz_riscv_instr::VSUXEI8_V, spatz_riscv_instr::VSUXEI16_V, spatz_riscv_instr::VSUXEI32_V, spatz_riscv_instr::VSUXEI64_V};
 
   // Do we need to delay is load/store because of the VLSU?
   assign vlsu_stall = (is_store && acc_mem_cnt_q != '0) || (is_load && acc_mem_str_cnt_q != '0) || acc_mem_cnt_q == '1;
@@ -636,7 +636,7 @@ module spatz_fpu_sequencer
 `endif
     fp_lsu_qdata   = fpr_rdata[1];
     fp_lsu_qsize   = ls_size;
-    fp_lsu_qamo    = snitch_pkg::AMONone;
+    fp_lsu_qamo    = lsu_pkg::AMONone;
     fp_lsu_qvalid  = (is_load || is_store) && operands_available && !vlsu_stall;
 
     acc_mem_cnt_d     = acc_mem_cnt_q;

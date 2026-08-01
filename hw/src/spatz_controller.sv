@@ -688,13 +688,13 @@ module spatz_controller
       if (spatz_req.op == VCSR) begin
         if (spatz_req.use_rd) begin
           unique case (spatz_req.op_csr.addr)
-            riscv_instr::CSR_VSTART: rsp_d.data = elen_t'(vstart_q);
-            riscv_instr::CSR_VL    : rsp_d.data = elen_t'(vl_q);
-            riscv_instr::CSR_VTYPE : rsp_d.data = elen_t'(vtype_q);
-            riscv_instr::CSR_VLENB : rsp_d.data = elen_t'(VLENB);
-            riscv_instr::CSR_VXSAT : rsp_d.data = '0;
-            riscv_instr::CSR_VXRM  : rsp_d.data = '0;
-            riscv_instr::CSR_VCSR  : rsp_d.data = '0;
+            spatz_riscv_instr::CSR_VSTART: rsp_d.data = elen_t'(vstart_q);
+            spatz_riscv_instr::CSR_VL    : rsp_d.data = elen_t'(vl_q);
+            spatz_riscv_instr::CSR_VTYPE : rsp_d.data = elen_t'(vtype_q);
+            spatz_riscv_instr::CSR_VLENB : rsp_d.data = elen_t'(VLENB);
+            spatz_riscv_instr::CSR_VXSAT : rsp_d.data = '0;
+            spatz_riscv_instr::CSR_VXRM  : rsp_d.data = '0;
+            spatz_riscv_instr::CSR_VCSR  : rsp_d.data = '0;
             default: rsp_d.data                 = '0;
           endcase
         end
