@@ -1048,8 +1048,8 @@ module spatz_vfu
     logic [N_FPU-1:0] fpu_busy_d, fpu_busy_q;
     `FF(fpu_busy_q, fpu_busy_d, '0)
 
-    status_t [N_FPU-1:0] fpu_status_d, fpu_status_q;
-    `FF(fpu_status_q, fpu_status_d, '0)
+    // Registered per lane below, gated on that lane's own `spatz_fpu_rsp.p_valid`.
+    status_t [N_FPU-1:0] fpu_status_q;
 
     always_comb begin: gen_decoder
       fpu_op           = fpnew_pkg::FMADD;
@@ -1218,7 +1218,8 @@ module spatz_vfu
       assign fpu_in_ready[fpu*ELENB +: ELENB]     = {ELENB{spatz_fpu_rsp.q_ready}};
       assign fpu_result_valid[fpu*ELENB +: ELENB] = {ELENB{spatz_fpu_rsp.p_valid}};
       assign fpu_result[fpu*ELEN +: ELEN]         = spatz_fpu_rsp.p.result;
-      assign fpu_status_d[fpu]                    = spatz_fpu_rsp.p.status;
+      // Only latch the status when the completing result is routed to Spatz.
+      `FFL(fpu_status_q[fpu], spatz_fpu_rsp.p.status, spatz_fpu_rsp.p_valid, '0)
 
       // Mux FPU requests from Spatz and DCA
       if (EnableDca) begin : gen_dca_mux
@@ -1310,7 +1311,7 @@ module spatz_vfu
       );
 
       if (fpu == 0) begin: gen_fpu_tag
-        assign fpu_result_tag = tag;
+        assign fpu_result_tag = spatz_fpu_rsp.p.tag;
       end: gen_fpu_tag
     end : gen_fpnew
   end: gen_fpu else begin: gen_no_fpu
