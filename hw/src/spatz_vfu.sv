@@ -8,13 +8,22 @@
 // vector instructions. It can be configured with a parameterizable amount
 // of IPUs that work in parallel.
 
+`include "dca_interface/typedef.svh"
+`include "fpu_interface/typedef.svh"
+`include "fpu_interface/assign.svh"
+
 module spatz_vfu
   import spatz_pkg::*;
   import rvv_pkg::*;
   import cc_pkg::idx_width;
   import fpnew_pkg::*; #(
     /// FPU configuration.
-    parameter fpu_implementation_t FPUImplementation = fpu_implementation_t'(0)
+    parameter fpu_implementation_t FPUImplementation = fpu_implementation_t'(0),
+    /// Enable external Direct Compute Access requests into the FPU lanes.
+    parameter bit EnableDca = 1'b0,
+    // Derived parameters. DO NOT CHANGE!
+    localparam type dca_req_t = `DCA_REQ_STRUCT(N_FPU*ELEN),
+    localparam type dca_rsp_t = `DCA_RSP_STRUCT(N_FPU*ELEN)
   ) (
     input  logic             clk_i,
     input  logic             rst_ni,
@@ -39,7 +48,10 @@ module spatz_vfu
     input  vrf_data_t  [2:0] vrf_rdata_i,
     input  logic       [2:0] vrf_rvalid_i,
     // FPU side channel
-    output status_t          fpu_status_o
+    output status_t          fpu_status_o,
+    // Direct Compute Access (DCA) interface
+    input  dca_req_t         dca_req_i,
+    output dca_rsp_t         dca_rsp_o
   );
 
 // Include FF
@@ -63,6 +75,9 @@ module spatz_vfu
 
     // Is this a reduction?
     logic reduction;
+
+    // Did this request originate from the external DCA port?
+    logic dca;
   } vfu_tag_t;
 
   ///////////////////////
@@ -742,7 +757,8 @@ module spatz_vfu
       last           : last_request,
       narrowing      : spatz_req.op_arith.is_narrowing,
       narrowing_upper: narrowing_upper_q,
-      reduction      : spatz_req.op_arith.is_reduction
+      reduction      : spatz_req.op_arith.is_reduction,
+      dca            : 1'b0
     };
 
     if (spatz_req_valid && vl_q == '0) begin
@@ -1000,6 +1016,29 @@ module spatz_vfu
   ////////////
 
   if (FPU) begin: gen_fpu
+    `FPU_TYPEDEF_REQRSP_ALL(fpu, ELEN, vfu_tag_t)
+    `DCA_TYPEDEF_ALL(dca_lane, ELEN)
+
+    dca_lane_req_t [N_FPU-1:0] dca_lane_req;
+    dca_lane_rsp_t [N_FPU-1:0] dca_lane_rsp;
+
+    if (EnableDca) begin : gen_dca_fork
+      dca_fork #(
+        .LaneDataWidth(ELEN),
+        .NumLanes     (N_FPU)
+      ) i_dca_fork (
+        .clk_i    (clk_i),
+        .rst_ni   (rst_ni),
+        .slv_req_i(dca_req_i),
+        .slv_rsp_o(dca_rsp_o),
+        .mst_req_o(dca_lane_req),
+        .mst_rsp_i(dca_lane_rsp)
+      );
+    end else begin : gen_no_dca_fork
+      assign dca_lane_req     = '0;
+      assign dca_rsp_o        = '0;
+    end
+
     operation_e fpu_op;
     fp_format_e fpu_src_fmt, fpu_dst_fmt;
     int_format_e fpu_int_fmt;
@@ -1153,76 +1192,121 @@ module spatz_vfu
     end: gen_widening
 
     for (genvar fpu = 0; unsigned'(fpu) < N_FPU; fpu++) begin : gen_fpnew
-      logic int_fpu_result_valid;
-      logic int_fpu_in_ready;
-      vfu_tag_t tag;
-
-      assign fpu_in_ready[fpu*ELENB +: ELENB]     = {ELENB{int_fpu_in_ready}};
-      assign fpu_result_valid[fpu*ELENB +: ELENB] = {ELENB{int_fpu_result_valid}};
 
       elen_t fpu_operand1, fpu_operand2, fpu_operand3;
       assign fpu_operand1 = spatz_req.op_arith.switch_rs1_rd ? wide_operand3[fpu*ELEN +: ELEN] : wide_operand1[fpu*ELEN +: ELEN];
       assign fpu_operand2 = wide_operand2[fpu*ELEN +: ELEN];
       assign fpu_operand3 = (fpu_op == fpnew_pkg::ADD || spatz_req.op_arith.switch_rs1_rd) ? wide_operand1[fpu*ELEN +: ELEN] : wide_operand3[fpu*ELEN +: ELEN];
 
-      logic int_fpu_in_valid;
-      assign int_fpu_in_valid = spatz_req_valid && operands_ready && (!spatz_req.op_arith.is_scalar || fpu == 0) && is_fpu_insn;
+      fpu_req_t spatz_fpu_req, dca_fpu_req, muxed_fpu_req;
+      fpu_rsp_t spatz_fpu_rsp, dca_fpu_rsp, muxed_fpu_rsp;
 
-      // Generate an FPU pipeline
-      elen_t fpu_operand1_q, fpu_operand2_q, fpu_operand3_q;
-      operation_e fpu_op_q;
-      fp_format_e fpu_src_fmt_q, fpu_dst_fmt_q;
-      int_format_e fpu_int_fmt_q;
-      logic fpu_op_mode_q;
-      logic fpu_vectorial_op_q;
-      roundmode_e rm_q;
-      vfu_tag_t input_tag_q;
+      // Pack Spatz' FPU request
+      assign spatz_fpu_req.q_valid        = spatz_req_valid && operands_ready && (!spatz_req.op_arith.is_scalar || fpu == 0) && is_fpu_insn;
+      assign spatz_fpu_req.p_ready        = result_ready;
+      assign spatz_fpu_req.q.operands     = {fpu_operand3, fpu_operand2, fpu_operand1};
+      assign spatz_fpu_req.q.rnd_mode     = spatz_req.rm;
+      assign spatz_fpu_req.q.op           = fpu_op;
+      assign spatz_fpu_req.q.op_mod       = fpu_op_mode;
+      assign spatz_fpu_req.q.src_fmt      = fpu_src_fmt;
+      assign spatz_fpu_req.q.dst_fmt      = fpu_dst_fmt;
+      assign spatz_fpu_req.q.int_fmt      = fpu_int_fmt;
+      assign spatz_fpu_req.q.vectorial_op = fpu_vectorial_op;
+      assign spatz_fpu_req.q.tag          = input_tag;
+
+      // Unpack Spatz' FPU response
+      assign fpu_in_ready[fpu*ELENB +: ELENB]     = {ELENB{spatz_fpu_rsp.q_ready}};
+      assign fpu_result_valid[fpu*ELENB +: ELENB] = {ELENB{spatz_fpu_rsp.p_valid}};
+      assign fpu_result[fpu*ELEN +: ELEN]         = spatz_fpu_rsp.p.result;
+      assign fpu_status_d[fpu]                    = spatz_fpu_rsp.p.status;
+
+      // Mux FPU requests from Spatz and DCA
+      if (EnableDca) begin : gen_dca_mux
+
+        // Tag DCA request
+        always_comb begin
+          `FPU_ASSIGN_UNTAGGED_REQ(, dca_fpu_req, dca_lane_req[fpu])
+          dca_fpu_req.q.tag = '0;
+          dca_fpu_req.q.tag.dca = 1'b1;
+        end
+
+        // Drop tag from DCA response
+        `FPU_ASSIGN_UNTAGGED_RSP(assign, dca_lane_rsp[fpu], dca_fpu_rsp)
+
+        reqrsp_mux #(
+          .NrPorts    (2),
+          .req_chan_t (fpu_req_chan_t),
+          .rsp_chan_t (fpu_rsp_chan_t),
+          .ExtRspRoute(1'b1),
+          .RspDepth   (0),
+          .RegisterReq('0)
+        ) i_mux_dca (
+          .clk_i,
+          .rst_ni,
+          .slv_req_i  ({dca_fpu_req, spatz_fpu_req}),
+          .slv_rsp_o  ({dca_fpu_rsp, spatz_fpu_rsp}),
+          .mst_req_o  (muxed_fpu_req),
+          .mst_rsp_i  (muxed_fpu_rsp),
+          .rsp_route_i(muxed_fpu_rsp.p.tag.dca),
+          .idx_o      ()
+        );
+      end else begin : gen_no_dca_mux
+        assign muxed_fpu_req = spatz_fpu_req;
+        assign spatz_fpu_rsp = muxed_fpu_rsp;
+        assign dca_fpu_rsp = '0;
+        assign dca_lane_rsp[fpu] = '0;
+      end
+
+      // Cut the FPU request channel
+      fpu_req_chan_t fpu_req_q;
       logic fpu_in_valid_q;
       logic fpu_in_ready_d;
 
-      `FFL(fpu_operand1_q, fpu_operand1, int_fpu_in_valid && int_fpu_in_ready, '0)
-      `FFL(fpu_operand2_q, fpu_operand2, int_fpu_in_valid && int_fpu_in_ready, '0)
-      `FFL(fpu_operand3_q, fpu_operand3, int_fpu_in_valid && int_fpu_in_ready, '0)
-      `FFL(fpu_op_q, fpu_op, int_fpu_in_valid && int_fpu_in_ready, fpnew_pkg::FMADD)
-      `FFL(fpu_src_fmt_q, fpu_src_fmt, int_fpu_in_valid && int_fpu_in_ready, fpnew_pkg::FP32)
-      `FFL(fpu_dst_fmt_q, fpu_dst_fmt, int_fpu_in_valid && int_fpu_in_ready, fpnew_pkg::FP32)
-      `FFL(fpu_int_fmt_q, fpu_int_fmt, int_fpu_in_valid && int_fpu_in_ready, fpnew_pkg::INT8)
-      `FFL(fpu_op_mode_q, fpu_op_mode, int_fpu_in_valid && int_fpu_in_ready, 1'b0)
-      `FFL(fpu_vectorial_op_q, fpu_vectorial_op, int_fpu_in_valid && int_fpu_in_ready, 1'b0)
-      `FFL(rm_q, spatz_req.rm, int_fpu_in_valid && int_fpu_in_ready, fpnew_pkg::RNE)
-      `FFL(input_tag_q, input_tag, int_fpu_in_valid && int_fpu_in_ready, '{vsew: EW_8, default: '0})
-      `FFL(fpu_in_valid_q, int_fpu_in_valid, int_fpu_in_ready, 1'b0)
-      assign int_fpu_in_ready = !fpu_in_valid_q || fpu_in_valid_q && fpu_in_ready_d;
+      `FFL(fpu_req_q, muxed_fpu_req.q, muxed_fpu_req.q_valid && muxed_fpu_rsp.q_ready, '{
+        operands:     '0,
+        rnd_mode:     fpnew_pkg::RNE,
+        op:           fpnew_pkg::FMADD,
+        op_mod:       1'b0,
+        src_fmt:      fpnew_pkg::FP32,
+        dst_fmt:      fpnew_pkg::FP32,
+        int_fmt:      fpnew_pkg::INT8,
+        vectorial_op: 1'b0,
+        tag:          '{vsew: EW_8, default: '0}
+      })
+      `FFL(fpu_in_valid_q, muxed_fpu_req.q_valid, muxed_fpu_rsp.q_ready, 1'b0)
 
+      assign muxed_fpu_rsp.q_ready  = !fpu_in_valid_q || fpu_in_valid_q && fpu_in_ready_d;
+
+      // Instantiate the FPU
       fpnew_top #(
-        .Features                   (FPUFeatures           ),
-        .Implementation             (FPUImplementation     ),
-        .TagType                    (vfu_tag_t             ),
+        .Features                   (FPUFeatures),
+        .Implementation             (FPUImplementation),
+        .TagType                    (vfu_tag_t),
         .StochasticRndImplementation(fpnew_pkg::DEFAULT_RSR)
       ) i_fpu (
-        .clk_i         (clk_i                                                  ),
-        .rst_ni        (rst_ni                                                 ),
+        .clk_i         (clk_i),
+        .rst_ni        (rst_ni),
         .hart_id_i     ({hart_id_i[31-$clog2(N_FPU):0], fpu[$clog2(N_FPU)-1:0]}),
-        .flush_i       (1'b0                                                   ),
-        .busy_o        (fpu_busy_d[fpu]                                        ),
-        .operands_i    ({fpu_operand3_q, fpu_operand2_q, fpu_operand1_q}       ),
+        .flush_i       (1'b0),
+        .busy_o        (fpu_busy_d[fpu]),
+        .operands_i    ({fpu_req_q.operands[2], fpu_req_q.operands[1], fpu_req_q.operands[0]}),
         // Only the FPU0 executes scalar instructions
-        .in_valid_i    (fpu_in_valid_q                                         ),
-        .in_ready_o    (fpu_in_ready_d                                         ),
-        .op_i          (fpu_op_q                                               ),
-        .src_fmt_i     (fpu_src_fmt_q                                          ),
-        .dst_fmt_i     (fpu_dst_fmt_q                                          ),
-        .int_fmt_i     (fpu_int_fmt_q                                          ),
-        .vectorial_op_i(fpu_vectorial_op_q                                     ),
-        .op_mod_i      (fpu_op_mode_q                                          ),
-        .tag_i         (input_tag_q                                            ),
-        .simd_mask_i   ('1                                                     ),
-        .rnd_mode_i    (rm_q                                                   ),
-        .result_o      (fpu_result[fpu*ELEN +: ELEN]                           ),
-        .out_valid_o   (int_fpu_result_valid                                   ),
-        .out_ready_i   (result_ready                                           ),
-        .status_o      (fpu_status_d[fpu]                                      ),
-        .tag_o         (tag                                                    )
+        .in_valid_i    (fpu_in_valid_q),
+        .in_ready_o    (fpu_in_ready_d),
+        .op_i          (fpu_req_q.op),
+        .src_fmt_i     (fpu_req_q.src_fmt),
+        .dst_fmt_i     (fpu_req_q.dst_fmt),
+        .int_fmt_i     (fpu_req_q.int_fmt),
+        .vectorial_op_i(fpu_req_q.vectorial_op),
+        .op_mod_i      (fpu_req_q.op_mod),
+        .tag_i         (fpu_req_q.tag),
+        .simd_mask_i   ('1),
+        .rnd_mode_i    (fpu_req_q.rnd_mode),
+        .result_o      (muxed_fpu_rsp.p.result),
+        .out_valid_o   (muxed_fpu_rsp.p_valid),
+        .out_ready_i   (muxed_fpu_req.p_ready),
+        .status_o      (muxed_fpu_rsp.p.status),
+        .tag_o         (muxed_fpu_rsp.p.tag)
       );
 
       if (fpu == 0) begin: gen_fpu_tag
@@ -1236,6 +1320,7 @@ module spatz_vfu
     assign fpu_result_valid = '0;
     assign fpu_result_tag   = '0;
     assign fpu_status_o     = '0;
+    assign dca_rsp_o        = '0;
   end: gen_no_fpu
 
 endmodule : spatz_vfu
