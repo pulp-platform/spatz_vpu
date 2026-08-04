@@ -30,10 +30,10 @@ module spatz_serdiv #(
     output logic [WIDTH-1:0]   res_o
   );
 
-  import riscv_instr::DIV;
-  import riscv_instr::DIVU;
-  import riscv_instr::REM;
-  import riscv_instr::REMU;
+  import spatz_riscv_instr::DIV;
+  import spatz_riscv_instr::DIVU;
+  import spatz_riscv_instr::REM;
+  import spatz_riscv_instr::REMU;
 
   logic signed_op;
   logic rem;

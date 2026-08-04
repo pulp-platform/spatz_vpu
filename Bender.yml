@@ -23,7 +23,7 @@ sources:
   ## hw/ip/spatz ##
   - files:
     # Level 0
-    - hw/ip/snitch/src/riscv_instr.sv
+    - hw/src/spatz_riscv_instr.sv
     - target: mempool
       files:
         - hw/src/reorder_buffer.sv
