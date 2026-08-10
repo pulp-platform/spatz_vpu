@@ -40,9 +40,9 @@ package spatz_pkg;
   localparam bit RVD            = `ifdef RVD `RVD `else 0 `endif;
 % elif cfg['spatz_fpu']:
   // Single-precision floating point support
-  localparam bit RVF            = ${core_isa_ext('f')};
+  localparam bit RVF            = ${int(cfg['rvf']) if 'rvf' in cfg else core_isa_ext('f')};
   // Double-precision floating-point support
-  localparam bit RVD            = ${core_isa_ext('d')};
+  localparam bit RVD            = ${int(cfg['rvd']) if 'rvd' in cfg else core_isa_ext('d')};
 % else :
   // Single-precision floating point support
   localparam bit RVF            = 0;
