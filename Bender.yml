@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 package:
-  name: spatz_core
+  name: spatz_vpu
   authors:
     - "Matheus Cavalcante <matheusd@iis.ee.ethz.ch>"
     - "Mattia Sinigaglia  <mattia.sinigaglia5@unibo.it>"

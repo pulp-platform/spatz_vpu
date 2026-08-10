@@ -1,6 +1,6 @@
 PYTHON ?= python
-IMPORT_SCRIPT = import_cfg.py
-APPLY_SCRIPT = apply_cfg.py
+IMPORT_SCRIPT = ../util/import_cfg.py
+APPLY_SCRIPT = ../util/apply_cfg.py
 
 CFG ?=
 
