@@ -10,8 +10,8 @@ package:
     - "Diyou Shen         <dishen@iis.ee.ethz.ch"
 
 dependencies:
-  common_cells:       { git: "https://github.com/pulp-platform/common_cells.git",       rev: master             }
-  FPnew:              { git: "https://github.com/pulp-platform/cvfpu.git",              rev: common-cells-v2    }
+  common_cells:       { git: "https://github.com/pulp-platform/common_cells.git",       rev: "03d98106aa19952a10360d2230def85144a0008b" }
+  FPnew:              { git: "https://github.com/pulp-platform/cvfpu.git",              rev: bump-common-cells-v2 }
   tech_cells_generic: { git: "https://github.com/pulp-platform/tech_cells_generic.git", version: 0.2.14         }
   core_ips:           { git: "https://github.com/colluca/core_ips.git",                 rev: main               }
   reqrsp_interface:   { git: "https://github.com/colluca/reqrsp_interface.git",         rev: main               }

@@ -425,7 +425,8 @@ package spatz_pkg;
     //              INT8  INT16 INT32 INT64
     IntFmtMask   : {1'b1, 1'b1, 1'b1, 1'b1},
     MxFpFmtMask  : 9'b0,
-    MxIntFmtMask : 4'b0
+    MxIntFmtMask : 4'b0,
+    PaceFeatures : '{default: 0}
   } :
   // Single Precision FPU
   '{
@@ -437,7 +438,8 @@ package spatz_pkg;
     //              INT8  INT16 INT32 INT64
     IntFmtMask   : {1'b1, 1'b1, 1'b1, 1'b0},
     MxFpFmtMask  : 9'b0,
-    MxIntFmtMask : 4'b0
+    MxIntFmtMask : 4'b0,
+    PaceFeatures : '{default: 0}
   };
 
 % if cfg['mempool']:
