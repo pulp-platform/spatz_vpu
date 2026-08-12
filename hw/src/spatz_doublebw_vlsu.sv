@@ -1565,7 +1565,7 @@ module spatz_doublebw_vlsu
 `else
       assign spatz_mem_req[intf][fu].addr  = mem_req_addr[intf][fu];
       assign spatz_mem_req[intf][fu].write = !mem_is_load;
-      assign spatz_mem_req[intf][fu].amo   = reqrsp_pkg::AMONone;
+      assign spatz_mem_req[intf][fu].amo   = lsu_pkg::AMONone;
       assign spatz_mem_req[intf][fu].data  = mem_req_data[intf][fu];
       assign spatz_mem_req[intf][fu].strb  = mem_req_strb[intf][fu];
       assign spatz_mem_req[intf][fu].user  = '0;

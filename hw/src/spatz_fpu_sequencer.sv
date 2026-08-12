@@ -11,7 +11,7 @@ module spatz_fpu_sequencer
   import spatz_pkg::*;
   import rvv_pkg::*;
   import fpnew_pkg::*;
-  import reqrsp_pkg::*;
+  import lsu_pkg::*;
   import cf_math_pkg::idx_width; #(
     // Memory request
     parameter type dreq_t            = logic,
@@ -516,7 +516,7 @@ module spatz_fpu_sequencer
   logic [AddrWidth-1:0] fp_lsu_qaddr;
   logic [DataWidth-1:0] fp_lsu_qdata;
   logic [1:0]           fp_lsu_qsize;
-  reqrsp_pkg::amo_op_e  fp_lsu_qamo;
+  lsu_pkg::amo_op_e  fp_lsu_qamo;
   logic fp_lsu_qvalid;
   logic fp_lsu_qready;
 

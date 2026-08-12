@@ -37,7 +37,7 @@ module snitch_lsu #(
   input  addr_t                lsu_qaddr_i,
   input  data_t                lsu_qdata_i,
   input  logic [1:0]           lsu_qsize_i,
-  input  reqrsp_pkg::amo_op_e  lsu_qamo_i,
+  input  lsu_pkg::amo_op_e  lsu_qamo_i,
   input  logic                 lsu_qvalid_i,
   output logic                 lsu_qready_o,
   // response channel

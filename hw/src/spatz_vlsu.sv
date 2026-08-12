@@ -1390,7 +1390,7 @@ module spatz_vlsu
 `else
     assign spatz_mem_req[port].addr  = mem_req_addr[port];
     assign spatz_mem_req[port].write = !mem_is_load;
-    assign spatz_mem_req[port].amo   = reqrsp_pkg::AMONone;
+    assign spatz_mem_req[port].amo   = lsu_pkg::AMONone;
     assign spatz_mem_req[port].data  = mem_req_data[port];
     assign spatz_mem_req[port].strb  = mem_req_strb[port];
     assign spatz_mem_req[port].user  = '0;
