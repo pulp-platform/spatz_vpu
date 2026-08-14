@@ -99,7 +99,7 @@ module spatz_fpu_sequencer
     .AddrWidth    ( FPRRegWidth ),
     .NrReadPorts  ( 3           ),
     .NrWritePorts ( NrWritePorts ),
-    .ZeroRegZero  ( 1           )
+    .ZeroRegZero  ( 0           )
   ) i_fpr (
     .clk_i  (clk_i    ),
     .rst_ni (rst_ni   ),
@@ -566,6 +566,7 @@ module spatz_fpu_sequencer
     .lsu_qamo_i   (fp_lsu_qamo     ),
     .lsu_qrepd_i  (1'b0            ),
     .lsu_quser_i  ('0              ),
+    .lsu_qmcast_i ('0              ),
     .lsu_qvalid_i (fp_lsu_qvalid   ),
     .lsu_qready_o (fp_lsu_qready   ),
     // Response interface

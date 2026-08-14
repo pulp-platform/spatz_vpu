@@ -14,7 +14,8 @@ module spatz_vfu
   import cc_pkg::idx_width;
   import fpnew_pkg::*; #(
     /// FPU configuration.
-    parameter fpu_implementation_t FPUImplementation = fpu_implementation_t'(0)
+    parameter fpu_implementation_t FPUImplementation = fpu_implementation_t'(0),
+    localparam type                pace_param_t       = logic [PaceParamWidth-1:0]
   ) (
     input  logic             clk_i,
     input  logic             rst_ni,
@@ -39,6 +40,8 @@ module spatz_vfu
     input  vrf_data_t  [2:0] vrf_rdata_i,
     input  logic       [2:0] vrf_rvalid_i,
     // FPU side channel
+    input  pace_param_t      pace_param_i,
+    input  pace_mode_t       pace_mode_i,
     output status_t          fpu_status_o
   );
 
@@ -381,7 +384,9 @@ module spatz_vfu
             fpu_op      = fpnew_pkg::ADD;
             fpu_op_mode = 1'b1;
           end
-          VFMUL  : fpu_op = fpnew_pkg::MUL;
+          // Use PWPA (piecewise polynomial approximation) when PACE is enabled;
+          // otherwise regular FP multiply.
+          VFMUL  : fpu_op = pace_mode_i.enable ? fpnew_pkg::PWPA : fpnew_pkg::MUL;
           VFMADD : fpu_op = fpnew_pkg::FMADD;
           VFMSUB : begin
             fpu_op      = fpnew_pkg::FMADD;
@@ -1611,6 +1616,8 @@ assign vfcmp_result_accepted = (spatz_req.op == VFCMP) && &(result_valid | ~pend
         .flush_i       (1'b0                                                   ),
         .busy_o        (fpu_busy_d[fpu]                                        ),
         .operands_i    ({fpu_operand3_q, fpu_operand2_q, fpu_operand1_q}       ),
+        .pace_param_i  (pace_param_i                                           ),
+        .pace_mode_i   (pace_mode_i                                            ),
         // Only the FPU0 executes scalar instructions
         .in_valid_i    (fpu_in_valid_q                                         ),
         .in_ready_o    (fpu_in_ready_d                                         ),

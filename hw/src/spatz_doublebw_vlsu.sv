@@ -1273,8 +1273,12 @@ module spatz_doublebw_vlsu
       if (state_q == VLSU_ReadingV0_t) begin
         vrf_re_o[intf] = (intf == 0) ? 2'b11 : 2'b00;
       end else begin
-        // Normal operation: port 1 reads vs2 for indexed
-        vrf_re_o[intf][1] = mem_is_indexed;
+        // Normal operation: port 1 reads vs2 for indexed. Once this interface
+        // has no more elements left to process, stop requesting: otherwise
+        // this interface's continuous index-VRF read request keeps winning
+        // the shared read port against the other interface (which may still
+        // have genuine outstanding work), starving it of vrf_rvalid_i forever.
+        vrf_re_o[intf][1] = mem_is_indexed && |mem_operation_valid[intf];
       end
 
       if (commit_insn_valid && commit_insn_q.is_load) begin

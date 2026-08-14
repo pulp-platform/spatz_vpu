@@ -804,6 +804,67 @@ module spatz_vlsu
 `endif
 `endif
 
+`ifndef TARGET_SYNTHESIS
+`ifdef TRACE
+  // pragma translate_off
+  int trace_vrf_wb_fd;
+  int trace_mem_fd;
+  string trace_vrf_wb_file;
+  string trace_mem_file;
+
+  initial begin
+    trace_vrf_wb_file = "spatz_vlsu_vrf_wb.log";
+    trace_vrf_wb_fd = $fopen(trace_vrf_wb_file, "w");
+
+    trace_mem_file = "spatz_vlsu_mem_trace.log";
+    trace_mem_fd = $fopen(trace_mem_file, "w");
+  end
+
+  always_ff @(posedge clk_i) begin
+    if (rst_ni && vrf_req_valid_q && vrf_req_ready_q) begin
+      if (trace_vrf_wb_fd != 0) begin
+        $fdisplay(trace_vrf_wb_fd,
+                  "[spatz_vlsu] vrf_wb id=%0d waddr=0x%0h wbe=0x%0h wdata=0x%0h",
+                  vrf_req_q.rsp.id, vrf_req_q.waddr, vrf_req_q.wbe, vrf_req_q.wdata);
+      end
+    end
+  end
+
+  always_ff @(posedge clk_i) begin
+    if (rst_ni && trace_mem_fd != 0) begin
+      for (int unsigned port = 0; port < NrMemPorts; port++) begin
+        if (spatz_mem_req_valid_o[port] && spatz_mem_req_ready_i[port]) begin
+          if (spatz_mem_req_o[port].write) begin
+            $fdisplay(trace_mem_fd,
+                      "[spatz_vlsu] mem_req port=%0d write=1 addr=0x%0h data=0x%0h",
+                      port, spatz_mem_req_o[port].addr, spatz_mem_req_o[port].data);
+          end else begin
+            $fdisplay(trace_mem_fd,
+                      "[spatz_vlsu] mem_req port=%0d write=0 addr=0x%0h",
+                      port, spatz_mem_req_o[port].addr);
+          end
+        end
+
+`ifdef MEMPOOL_SPATZ
+        if (spatz_mem_rsp_valid_i[port]) begin
+          $fdisplay(trace_mem_fd,
+                    "[spatz_vlsu] mem_rsp port=%0d write=%0d data=0x%0h",
+                    port, spatz_mem_rsp_i[port].write, spatz_mem_rsp_i[port].data);
+        end
+`else
+        if (spatz_mem_rsp_valid_i[port]) begin
+          $fdisplay(trace_mem_fd,
+                    "[spatz_vlsu] mem_rsp port=%0d data=0x%0h",
+                    port, spatz_mem_rsp_i[port].data);
+        end
+`endif
+      end
+    end
+  end
+  // pragma translate_on
+`endif
+`endif
+
   //////////////
   // Counters //
   //////////////
@@ -888,8 +949,15 @@ module spatz_vlsu
       // port 0 is the only port sending memory requests
       // But index needs to be fetched corresponding to 2 ports - port 0 and port 1
       // This signal is used to decide if we need to fetch next index or not
+      max_idx_elements = (mem_idx_vl >> $clog2(NrMemPorts*MemDataWidthB)) << $clog2(MemDataWidthB);
 
-      max_idx_elements = (max_elements >> mem_spatz_req.vtype.vsew) << mem_spatz_req.op_mem.ew;
+      if (NrMemPorts == 1)
+        max_idx_elements = mem_idx_vl;
+      else
+        if (mem_idx_vl[$clog2(MemDataWidthB) +: $clog2(NrMemPorts)] > port)
+          max_idx_elements += MemDataWidthB;
+        else if (mem_idx_vl[$clog2(MemDataWidthB) +: $clog2(NrMemPorts)] == port)
+          max_idx_elements += mem_idx_vl[$clog2(MemDataWidthB)-1:0];
 
       mem_idx_vrf_fetch_pending[port] = mem_spatz_req_valid && (max_idx_elements != mem_idx_counter_q[port]);
 
