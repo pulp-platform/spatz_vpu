@@ -10,6 +10,9 @@
 module spatz_vlsu
   import spatz_pkg::*;
   import rvv_pkg::*;
+`ifdef VENTAGLIO
+  import vtl_pkg::*;
+`endif
   import cc_pkg::idx_width; #(
     parameter int unsigned   NrMemPorts         = 1,
     parameter int unsigned   NrOutstandingLoads = 8,
@@ -68,7 +71,11 @@ module spatz_vlsu
   //////////////
 
   typedef logic [IdWidth-1:0] id_t;
+`ifdef VENTAGLIO
+  typedef logic [$clog2(NrWordsPerVector*8)+1:0] vreg_elem_t;
+`else
   typedef logic [$clog2(NrWordsPerVector*8)-1:0] vreg_elem_t;
+`endif
 
   ///////////////////////
   //  Operation queue  //
@@ -118,6 +125,22 @@ module spatz_vlsu
         spatz_req_d.vstart = spatz_req_i.vstart << MAXEW;
       end
     endcase
+
+`ifdef VENTAGLIO
+    // For VLX (Ventaglio indexed load), the effective number of memory beats
+    // is reduced by the index width: VL elements packed into an index vector
+    // of width `sp_cfg_index_width`. Recompute the byte-VL we feed to the
+    // memory stage accordingly.
+    if (spatz_req_d.op_vtl.is_load_idx) begin
+      unique case (spatz_req_d.op_vtl.sp_cfg.sp_cfg_index_width)
+        IDXW_1  : spatz_req_d.vl = spatz_req_i.vl >> 4;
+        IDXW_2  : spatz_req_d.vl = spatz_req_i.vl >> 2;
+        IDXW_4  : spatz_req_d.vl = spatz_req_i.vl >> 1;
+        IDXW_8  : spatz_req_d.vl = spatz_req_i.vl;
+        default : spatz_req_d.vl = spatz_req_i.vl;
+      endcase
+    end
+`endif
   end: proc_spatz_req
 
   // Only do the judgement when we have a valid instruction
@@ -781,67 +804,6 @@ module spatz_vlsu
             $fdisplay(trace_mem_fd,
                       "[spatz_vlsu] mem_req port=%0d intf=%0d fu=%0d id=%0d write=0 addr=0x%0h",
                       port, intf, fu, mem_req_id[port], spatz_mem_req_o[port].addr);
-          end
-        end
-
-`ifdef MEMPOOL_SPATZ
-        if (spatz_mem_rsp_valid_i[port]) begin
-          $fdisplay(trace_mem_fd,
-                    "[spatz_vlsu] mem_rsp port=%0d write=%0d data=0x%0h",
-                    port, spatz_mem_rsp_i[port].write, spatz_mem_rsp_i[port].data);
-        end
-`else
-        if (spatz_mem_rsp_valid_i[port]) begin
-          $fdisplay(trace_mem_fd,
-                    "[spatz_vlsu] mem_rsp port=%0d data=0x%0h",
-                    port, spatz_mem_rsp_i[port].data);
-        end
-`endif
-      end
-    end
-  end
-  // pragma translate_on
-`endif
-`endif
-
-`ifndef TARGET_SYNTHESIS
-`ifdef TRACE
-  // pragma translate_off
-  int trace_vrf_wb_fd;
-  int trace_mem_fd;
-  string trace_vrf_wb_file;
-  string trace_mem_file;
-
-  initial begin
-    trace_vrf_wb_file = "spatz_vlsu_vrf_wb.log";
-    trace_vrf_wb_fd = $fopen(trace_vrf_wb_file, "w");
-
-    trace_mem_file = "spatz_vlsu_mem_trace.log";
-    trace_mem_fd = $fopen(trace_mem_file, "w");
-  end
-
-  always_ff @(posedge clk_i) begin
-    if (rst_ni && vrf_req_valid_q && vrf_req_ready_q) begin
-      if (trace_vrf_wb_fd != 0) begin
-        $fdisplay(trace_vrf_wb_fd,
-                  "[spatz_vlsu] vrf_wb id=%0d waddr=0x%0h wbe=0x%0h wdata=0x%0h",
-                  vrf_req_q.rsp.id, vrf_req_q.waddr, vrf_req_q.wbe, vrf_req_q.wdata);
-      end
-    end
-  end
-
-  always_ff @(posedge clk_i) begin
-    if (rst_ni && trace_mem_fd != 0) begin
-      for (int unsigned port = 0; port < NrMemPorts; port++) begin
-        if (spatz_mem_req_valid_o[port] && spatz_mem_req_ready_i[port]) begin
-          if (spatz_mem_req_o[port].write) begin
-            $fdisplay(trace_mem_fd,
-                      "[spatz_vlsu] mem_req port=%0d write=1 addr=0x%0h data=0x%0h",
-                      port, spatz_mem_req_o[port].addr, spatz_mem_req_o[port].data);
-          end else begin
-            $fdisplay(trace_mem_fd,
-                      "[spatz_vlsu] mem_req port=%0d write=0 addr=0x%0h",
-                      port, spatz_mem_req_o[port].addr);
           end
         end
 

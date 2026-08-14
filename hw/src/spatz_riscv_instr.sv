@@ -1734,6 +1734,10 @@ package spatz_riscv_instr;
   localparam logic [11:0] CSR_STACKLIMIT = 12'h7d1;
   localparam logic [11:0] CSR_FMODE = 12'h800;
   localparam logic [11:0] CSR_PACE           = 12'hba0;
+  localparam logic [11:0] CSR_VTLREG = 12'h7c8;
+  localparam logic [11:0] CSR_VTLIDXW = 12'h7c9;
+  localparam logic [11:0] CSR_VTLBLKS = 12'h7ca;
+  localparam logic [11:0] CSR_VTLRATIO = 12'h7cb;
 
   // MXCore custom instructions (opcode custom-3: 1110111)
   localparam logic [31:0] MXDOTP_B0          = 32'b?????????????????000?????1110111;

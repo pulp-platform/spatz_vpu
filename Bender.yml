@@ -28,6 +28,7 @@ sources:
       files:
         - hw/src/reorder_buffer.sv
     - hw/src/rvv_pkg.sv
+    - hw/src/vtl_pkg.sv
     # Level 1
     - hw/src/generated/spatz_pkg.sv
     - hw/src/spatz_serdiv.sv
