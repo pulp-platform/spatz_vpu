@@ -1015,9 +1015,11 @@ module spatz_vfu
   //  FPUs  //
   ////////////
 
+  // VCS does not handle structure defined within generated block well
+  `FPU_TYPEDEF_REQRSP_ALL(fpu, ELEN, vfu_tag_t)
+  `DCA_TYPEDEF_ALL(dca_lane, ELEN)
+
   if (FPU) begin: gen_fpu
-    `FPU_TYPEDEF_REQRSP_ALL(fpu, ELEN, vfu_tag_t)
-    `DCA_TYPEDEF_ALL(dca_lane, ELEN)
 
     dca_lane_req_t [N_FPU-1:0] dca_lane_req;
     dca_lane_rsp_t [N_FPU-1:0] dca_lane_rsp;
