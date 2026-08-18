@@ -309,8 +309,16 @@ module spatz_controller
         intID = (vl_cnt_q[sb_id_i[port]] < vl_max_d[sb_id_i[port]]) ? 0 : 1;
       end
 
-      // Enable the VRF port if the dependant instructions wrote in the previous cycle
-      sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_q[intID] | done_result_q[intID]) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
+      // Enable the VRF port if the dependant instructions wrote in the previous cycle.
+      // Gate on BOTH DOUBLE_BW halves of the dependency, not just intID (this
+      // port's own half): intID is derived from THIS instruction's own
+      // vl_cnt/vl_max ratio, which has no relation to which half of the
+      // DEPENDENCY's data this instruction actually needs (e.g. a narrow
+      // vl=1 consumer like vmv.x.s always computes intID=0 for itself, so
+      // checking only half 0 of a wide producer's completion status lets a
+      // read of that producer's half-1 elements through before half 1 has
+      // actually finished writing).
+      sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | (wrote_result_q[0] | done_result_q[0]) & (wrote_result_q[1] | done_result_q[1])) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
 `else
       sb_enable_o[port] = sb_enable_i[port] && &(~scoreboard_q[sb_id_i[port]].deps | wrote_result_q) && (!(|scoreboard_q[sb_id_i[port]].deps) || !scoreboard_q[sb_id_i[port]].prevent_chaining);
 `endif
