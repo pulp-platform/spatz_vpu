@@ -664,8 +664,11 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
 
 `ifdef DOUBLE_BW
     // VLSU1 buffering
-    // Check if interface 1 response is being buffered, if so do not send response now
-    if (vlsu_rsp_valid && (vlsu_rsp.intf_id == 1'b1) && vlsu_buf_push)
+    // Do not retire a load response while interface 1's final VRF write is
+    // only being accepted into the conflict buffer. The dependent consumer
+    // would otherwise observe the load as finished before the buffered word
+    // has become visible in the VRF.
+    if (vlsu_rsp_valid && vlsu_buf_push)
       vlsu_rsp_buf_valid = 1'b0;
 
     if (!vlsu_buf_empty) begin
