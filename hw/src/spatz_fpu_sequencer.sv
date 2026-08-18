@@ -134,6 +134,10 @@ module spatz_fpu_sequencer
   logic is_load;
   logic is_store;
 
+  // Is this bit pattern ALSO a legal Spatz vector byte load/store (see the
+  // FLB/FSB decode cases and FpLsuVectorLsuMutualExclusion assertion below).
+  logic is_legal_vector_b_mem_op;
+
   // Is this an instruction that executes in this sequencer?
   logic is_local;
   assign is_local = is_move || is_load || is_store;
@@ -175,6 +179,28 @@ module spatz_fpu_sequencer
   ls_size_t  ls_size;
 
   always_comb begin
+    // Is this bit pattern ALSO a legal Spatz vector byte load/store (unit-
+    // stride, strided, or indexed SEW=8)? FLB/FSB (custom scalar FP8 byte
+    // load/store, see e.g. sw/kernels/blas/gemm/src/gemm_fp8.h) unavoidably
+    // alias the same opcode+func3 as RVV's SEW=8 vector memory ops: RVV
+    // explicitly claims width=000 for 8-bit vector elements (V spec), and F/
+    // D/Q/Zfh already claim the other 4 width values for FLH/FLW/FLD/FLQ, so
+    // there is no free width encoding left for a non-standard scalar FP8
+    // load/store (see sw/spatz-tests/STATUS.md for the full writeup). Any
+    // mop other than unit-stride is unambiguously a legal vector op (the
+    // rs2/vs2 field is fully used by the vector encoding there); for
+    // unit-stride, only lumop/sumop 00000 (plain, riscv_instr::VLE8_V) or
+    // 10000 (fault-only-first, loads only, riscv_instr::VLE8FF_V) are legal
+    // vector encodings - any other lumop value is a reserved/illegal vector
+    // encoding, so a real scalar FLB/FSB can always be told apart from a
+    // vector op by using an immediate offset other than 0 or 16 (see
+    // fl_narrow.c's use of `flb`).
+    automatic logic [1:0] mem_b_mop    = issue_req_i.data_op[27:26];
+    automatic logic [4:0] mem_b_lsumop = issue_req_i.data_op[24:20];
+    is_legal_vector_b_mem_op =
+        (issue_req_i.data_op[14:12] == 3'b000) &&
+        (mem_b_mop != 2'b00 || mem_b_lsumop == 5'b00000 || mem_b_lsumop == 5'b10000);
+
     // We are not reading any operands
     use_fs1 = 1'b0;
     use_fs2 = 1'b0;
@@ -391,31 +417,41 @@ module spatz_fpu_sequencer
         riscv_instr::FLH,
         riscv_instr::FLW,
         riscv_instr::FLD: begin
-          use_fd = 1'b1;
-          casez (issue_req_i.data_op)
-            riscv_instr::FLB: ls_size          = Byte;
-            riscv_instr::FLH: ls_size          = HalfWord;
-            riscv_instr::FLW: ls_size          = Word;
-            riscv_instr::FLD: if (RVD) ls_size = Double;
-            default:;
-          endcase
-          is_load      = 1'b1;
-          illegal_inst = !RVD && issue_req_i.data_op inside {riscv_instr::FLD};
+          // FLB (width=000) aliases RVV SEW=8 vector loads - defer to Spatz's
+          // vector decoder whenever it also claims this exact bit pattern
+          // (see is_legal_vector_b_mem_op above). FLH/FLW/FLD never alias
+          // (RVV never uses width=001/010/011), so this is a no-op for them.
+          if (!is_legal_vector_b_mem_op) begin
+            use_fd = 1'b1;
+            casez (issue_req_i.data_op)
+              riscv_instr::FLB: ls_size          = Byte;
+              riscv_instr::FLH: ls_size          = HalfWord;
+              riscv_instr::FLW: ls_size          = Word;
+              riscv_instr::FLD: if (RVD) ls_size = Double;
+              default:;
+            endcase
+            is_load      = 1'b1;
+            illegal_inst = !RVD && issue_req_i.data_op inside {riscv_instr::FLD};
+          end
         end
         riscv_instr::FSB,
         riscv_instr::FSH,
         riscv_instr::FSW,
         riscv_instr::FSD: begin
-          use_fs2 = 1'b1;
-          casez (issue_req_i.data_op)
-            riscv_instr::FSB: ls_size          = Byte;
-            riscv_instr::FSH: ls_size          = HalfWord;
-            riscv_instr::FSW: ls_size          = Word;
-            riscv_instr::FSD: if (RVD) ls_size = Double;
-            default:;
-          endcase
-          is_store     = 1'b1;
-          illegal_inst = !RVD && issue_req_i.data_op inside {riscv_instr::FSD};
+          // See FLB/FLH/FLW/FLD above - FSB (width=000) aliases RVV SEW=8
+          // vector stores.
+          if (!is_legal_vector_b_mem_op) begin
+            use_fs2 = 1'b1;
+            casez (issue_req_i.data_op)
+              riscv_instr::FSB: ls_size          = Byte;
+              riscv_instr::FSH: ls_size          = HalfWord;
+              riscv_instr::FSW: ls_size          = Word;
+              riscv_instr::FSD: if (RVD) ls_size = Double;
+              default:;
+            endcase
+            is_store     = 1'b1;
+            illegal_inst = !RVD && issue_req_i.data_op inside {riscv_instr::FSD};
+          end
         end
 
         // Vector instructions with FP scalar operand
@@ -803,5 +839,14 @@ module spatz_fpu_sequencer
 
   `ASSERT(MemoryStoreOperationCounterRollover,
     acc_mem_str_cnt_q == '0 |=> acc_mem_str_cnt_q != '1, clk_i, !rst_ni)
+
+  // FLB/FSB alias RVV SEW=8 vector memory ops (see is_legal_vector_b_mem_op
+  // above and sw/spatz-tests/STATUS.md) - this instruction can never be
+  // legitimately claimed by both the FP-LSU sequencer and Spatz's own vector
+  // LSU at once. Guards the fix above: catches a future edit to the FLB/FSB
+  // case (or to is_legal_vector_b_mem_op's field extraction) that
+  // reintroduces the double-claim this fix removes.
+  `ASSERT(FpLsuVectorLsuMutualExclusion,
+    issue_valid_i |-> !(is_legal_vector_b_mem_op && (is_load || is_store)), clk_i, !rst_ni)
 
 endmodule: spatz_fpu_sequencer
