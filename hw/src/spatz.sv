@@ -630,7 +630,17 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     sb_buf_id = sb_id;
     // Responses
     vfu_rsp_buf = vfu_rsp;
-    vfu_rsp_buf_valid = vfu_rsp_valid;
+    // vfu_rsp_valid (result_tag.last && ...) is computed inside spatz_vfu.sv
+    // purely from its own internal pipeline state, with no confirmation that
+    // the corresponding VRF write request was actually accepted this cycle.
+    // The i_vfu_buf FIFO below only re-adds that vrf_wvalid confirmation
+    // while it is actively buffering (write-port contention); the common
+    // buffer-empty passthrough case had none, letting the controller clear
+    // this instruction's write_table/scoreboard entry (unblocking dependent
+    // reads) before the VRF write for the last element has actually landed.
+    // A "wb" (scalar move, e.g. vmv.x.s) response never issues a VRF write
+    // at all, so it must not be gated on vrf_wvalid.
+    vfu_rsp_buf_valid = vfu_rsp_valid & (vfu_rsp.wb | vrf_wvalid[VFU_VD_WD]);
     vlsu_rsp_buf = vlsu_rsp;
     vlsu_rsp_buf_valid = vlsu_rsp_valid;
 
