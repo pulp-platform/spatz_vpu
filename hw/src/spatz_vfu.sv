@@ -163,6 +163,7 @@ module spatz_vfu
 
   // Scalar results (sent back to Snitch)
   elen_t scalar_result;
+  logic  scalar_result_is_fp;
 
   // Is this the last request?
   logic last_request;
@@ -352,7 +353,27 @@ module spatz_vfu
   assign result       = state_q == VFU_RunningIPU ? ipu_result       : fpu_result;
   assign result_valid = state_q == VFU_RunningIPU ? ipu_result_valid : fpu_result_valid;
 
-  assign scalar_result = result[ELEN-1:0];
+  assign scalar_result_is_fp = FPU ? result_tag.vd_addr[GPRWidth-1] : 1'b0;
+
+  always_comb begin : scalar_result_proc
+    // Narrow scalar writebacks only define the low SEW bits of the produced
+    // element. Reconstruct the architectural upper bits here so that moves and
+    // scalar FP results do not leak Xs into the core writeback path.
+    scalar_result = result[ELEN-1:0];
+
+    unique case (result_tag.vsew)
+      EW_8: begin
+        scalar_result = scalar_result_is_fp ? {{(ELEN-8){1'b1}}, result[7:0]} : {{(ELEN-8){result[7]}}, result[7:0]};
+      end
+      EW_16: begin
+        scalar_result = scalar_result_is_fp ? {{(ELEN-16){1'b1}}, result[15:0]} : {{(ELEN-16){result[15]}}, result[15:0]};
+      end
+      EW_32: begin
+        scalar_result = scalar_result_is_fp ? {{(ELEN-32){1'b1}}, result[31:0]} : {{(ELEN-32){result[31]}}, result[31:0]};
+      end
+      default:;
+    endcase
+  end
 
   ///////////////////////
   //  Reduction logic  //
