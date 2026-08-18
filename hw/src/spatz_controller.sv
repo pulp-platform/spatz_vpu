@@ -471,8 +471,9 @@ module spatz_controller
         write_table_d[spatz_req.vd] = {spatz_req.id, 1'b1};
       end
 
-      // Is this a risky instruction which should not chain?
-      if (spatz_req.op inside {VSLIDEUP, VLSE, VLXE, VSSE, VSXE})
+      // Loads can expose a VRF write one cycle before a chained consumer
+      // can safely observe the data on the shared read ports.
+      if (spatz_req.op inside {VLE, VSLIDEUP, VLSE, VLXE, VSSE, VSXE})
         scoreboard_d[spatz_req.id].prevent_chaining = 1'b1;
 
       // Is this a narrowing or widening instruction?
