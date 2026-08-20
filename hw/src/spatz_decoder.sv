@@ -126,27 +126,27 @@ module spatz_decoder
               spatz_req.op_vtl.is_load_idx = 1'b0;
             end
 
-            riscv_instr::VLX8_V,
-            riscv_instr::VLX16_V,
-            riscv_instr::VLX32_V,
-            riscv_instr::VLX64_V: begin
-              spatz_req.op                 = VLX;
-              spatz_req.op_mem.is_load     = 1'b1;
-              // spatz_req.vd                 = ls_vd;
-              spatz_req.use_vd             = 1'b1;
-              spatz_req.rs1                = decoder_req_i.rs1;
-              spatz_req.op_vtl.is_load_idx = 1'b1;
-              spatz_req.op_vtl.old_vd      = ls_vd;
-              illegal_instr        = 1'b0;
-              // Retrieve VSEW
-              unique case ({ls_mew, ls_width})
-                4'b1000: spatz_req.vtype.vsew = EW_8;
-                4'b1101: spatz_req.vtype.vsew = EW_16;
-                4'b1110: spatz_req.vtype.vsew = EW_32;
-                4'b1111: spatz_req.vtype.vsew = EW_64;
-                default: illegal_instr        = 1'b1;
-              endcase
-            end
+            // spatz_riscv_instr::VLX8_V,
+            // spatz_riscv_instr::VLX16_V,
+            // spatz_riscv_instr::VLX32_V,
+            // spatz_riscv_instr::VLX64_V: begin
+            //   spatz_req.op                 = VLX;
+            //   spatz_req.op_mem.is_load     = 1'b1;
+            //   // spatz_req.vd                 = ls_vd;
+            //   spatz_req.use_vd             = 1'b1;
+            //   spatz_req.rs1                = decoder_req_i.rs1;
+            //   spatz_req.op_vtl.is_load_idx = 1'b1;
+            //   spatz_req.op_vtl.old_vd      = ls_vd;
+            //   illegal_instr        = 1'b0;
+            //   // Retrieve VSEW
+            //   unique case ({ls_mew, ls_width})
+            //     4'b1000: spatz_req.vtype.vsew = EW_8;
+            //     4'b1101: spatz_req.vtype.vsew = EW_16;
+            //     4'b1110: spatz_req.vtype.vsew = EW_32;
+            //     4'b1111: spatz_req.vtype.vsew = EW_64;
+            //     default: illegal_instr        = 1'b1;
+            //   endcase
+            // end
 
             spatz_riscv_instr::VLSE8_V,
             spatz_riscv_instr::VLSE16_V,
@@ -404,7 +404,9 @@ module spatz_decoder
           spatz_req.vd          = arith_d;
           spatz_req.ex_unit     = VFU;
 
-          if (decoder_req_i.vtype.vill) begin
+          // VMV_S_X is a scalar move (see is_scalar assignment below) and does not
+          // depend on vtype being legal; every other opcode in this arm does.
+          if (decoder_req_i.vtype.vill && !(decoder_req_i.instr inside {spatz_riscv_instr::VMV_S_X})) begin
             illegal_instr = 1'b1;
           end
 
@@ -918,10 +920,6 @@ module spatz_decoder
           automatic vreg_t arith_s2 = decoder_req_i.instr[24:20];
           automatic vreg_t arith_d  = decoder_req_i.instr[11:7];
 
-          if (decoder_req_i.vtype.vill) begin
-            illegal_instr = 1'b1;
-          end
-
           spatz_req.op                 = VADD;
           spatz_req.ex_unit            = VFU;
           spatz_req.rd                 = arith_d;
@@ -929,6 +927,10 @@ module spatz_decoder
           spatz_req.vs2                = arith_s2;
           spatz_req.use_vs2            = 1'b1;
           spatz_req.op_arith.is_scalar = 1'b1;
+
+          if (decoder_req_i.vtype.vill && !spatz_req.op_arith.is_scalar) begin
+            illegal_instr = 1'b1;
+          end
         end
 
         // Vector floating-point instructions
@@ -1007,8 +1009,8 @@ module spatz_decoder
         spatz_riscv_instr::VFWSUB_WF,
         spatz_riscv_instr::VFWMUL_VV,
         spatz_riscv_instr::VFWMUL_VF,
-        spatz_riscv_instr::VFWDOTP_VV,
-        spatz_riscv_instr::VFWDOTP_VF,
+        // spatz_riscv_instr::VFWDOTP_VV,
+        // spatz_riscv_instr::VFWDOTP_VF,
         spatz_riscv_instr::VFWMACC_VV,
         spatz_riscv_instr::VFWMACC_VF,
         spatz_riscv_instr::VFWNMACC_VV,
@@ -1307,11 +1309,11 @@ module spatz_decoder
                 spatz_req.op_arith.widen_vs2 = 1'b1;
               end
 
-              spatz_riscv_instr::VFWDOTP_VV,
-              spatz_riscv_instr::VFWDOTP_VF: begin
-                spatz_req.op        = VSDOTP;
-                spatz_req.vd_is_src = 1'b1;
-              end
+              // spatz_riscv_instr::VFWDOTP_VV,
+              // spatz_riscv_instr::VFWDOTP_VF: begin
+              //   spatz_req.op        = VSDOTP;
+              //   spatz_req.vd_is_src = 1'b1;
+              // end
               spatz_riscv_instr::VFWMACC_VV,
               spatz_riscv_instr::VFWMACC_VF: begin
                 spatz_req.op                 = VFMADD;
@@ -1487,10 +1489,6 @@ module spatz_decoder
             automatic vreg_t arith_s2 = decoder_req_i.instr[24:20];
             automatic vreg_t arith_d  = decoder_req_i.instr[11:7];
 
-            if (decoder_req_i.vtype.vill) begin
-              illegal_instr = 1'b1;
-            end
-
             spatz_req.op                 = VADD;
             spatz_req.ex_unit            = VFU;
             spatz_req.rd                 = arith_d;
@@ -1500,6 +1498,10 @@ module spatz_decoder
             spatz_req.op_arith.is_scalar = 1'b1;
             // Keep default value (EW_8) if max element length is not 32 bit
             spatz_req.vtype.vsew         = (ELEN == 32) ? EW_32 : EW_8;
+
+            if (decoder_req_i.vtype.vill && !spatz_req.op_arith.is_scalar) begin
+              illegal_instr = 1'b1;
+            end
           end
         end
 
@@ -1517,7 +1519,7 @@ module spatz_decoder
           spatz_req.vtype.vsew         = EW_32;
           spatz_req.op_arith.is_scalar = 1'b1;
 
-          if (decoder_req_i.vtype.vill) begin
+          if (decoder_req_i.vtype.vill && !spatz_req.op_arith.is_scalar) begin
             illegal_instr = 1'b1;
           end
 
@@ -1544,7 +1546,7 @@ module spatz_decoder
           spatz_req.vtype.vsew         = EW_32;
           spatz_req.op_arith.is_scalar = 1'b1;
 
-          if (decoder_req_i.vtype.vill) begin
+          if (decoder_req_i.vtype.vill && !spatz_req.op_arith.is_scalar) begin
             illegal_instr = 1'b1;
           end
 
@@ -1592,7 +1594,7 @@ module spatz_decoder
             spatz_req.fm                 = fpu_fmt_mode_i;
             spatz_req.vtype.vsew         = EW_8;
 
-            if (decoder_req_i.vtype.vill) begin
+            if (decoder_req_i.vtype.vill && !spatz_req.op_arith.is_scalar) begin
               illegal_instr = 1'b1;
             end
 
@@ -1700,7 +1702,7 @@ module spatz_decoder
             spatz_req.fm                 = fpu_fmt_mode_i;
             spatz_req.vtype.vsew         = EW_16;
 
-            if (decoder_req_i.vtype.vill) begin
+            if (decoder_req_i.vtype.vill && !spatz_req.op_arith.is_scalar) begin
               illegal_instr = 1'b1;
             end
 
@@ -1809,7 +1811,7 @@ module spatz_decoder
             spatz_req.fm                 = fpu_fmt_mode_i;
             spatz_req.vtype.vsew         = EW_32;
 
-            if (decoder_req_i.vtype.vill) begin
+            if (decoder_req_i.vtype.vill && !spatz_req.op_arith.is_scalar) begin
               illegal_instr = 1'b1;
             end
 
@@ -1916,7 +1918,7 @@ module spatz_decoder
             spatz_req.fm                 = fpu_fmt_mode_i;
             spatz_req.vtype.vsew         = EW_64;
 
-            if (decoder_req_i.vtype.vill) begin
+            if (decoder_req_i.vtype.vill && !spatz_req.op_arith.is_scalar) begin
               illegal_instr = 1'b1;
             end
 

@@ -438,16 +438,20 @@ module spatz_fpu_sequencer
         spatz_riscv_instr::VFMV_V_F,
         spatz_riscv_instr::VFMV_S_F,
         spatz_riscv_instr::VFMUL_VF,
+`ifdef VENTAGLIO
         spatz_riscv_instr::VFXMUL_VF,
+`endif
         spatz_riscv_instr::VFRSUB_VF,
         spatz_riscv_instr::VFMADD_VF,
         spatz_riscv_instr::VFNMADD_VF,
         spatz_riscv_instr::VFMSUB_VF,
         spatz_riscv_instr::VFNMSUB_VF,
         spatz_riscv_instr::VFMACC_VF,
+`ifdef VENTAGLIO
         spatz_riscv_instr::VFXMACC_VF,
         spatz_riscv_instr::VFXMACC_VRF,
         spatz_riscv_instr::VFXMUL_VRF,
+`endif
         spatz_riscv_instr::VFNMACC_VF,
         spatz_riscv_instr::VFMSAC_VF,
         spatz_riscv_instr::VFNMSAC_VF,
@@ -459,8 +463,8 @@ module spatz_fpu_sequencer
         spatz_riscv_instr::VFWMACC_VF,
         spatz_riscv_instr::VFWNMACC_VF,
         spatz_riscv_instr::VFWMSAC_VF,
-        spatz_riscv_instr::VFWNMSAC_VF,
-        spatz_riscv_instr::VFWDOTP_VF: begin
+        // spatz_riscv_instr::VFWDOTP_VF,
+        spatz_riscv_instr::VFWNMSAC_VF: begin
           if (RVF) begin
             use_fs1 = 1'b1;
           end else begin
@@ -570,7 +574,6 @@ module spatz_fpu_sequencer
     .lsu_qamo_i   (fp_lsu_qamo     ),
     .lsu_qrepd_i  (1'b0            ),
     .lsu_quser_i  ('0              ),
-    .lsu_qmcast_i ('0              ),
     .lsu_qvalid_i (fp_lsu_qvalid   ),
     .lsu_qready_o (fp_lsu_qready   ),
     // Response interface
