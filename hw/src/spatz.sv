@@ -14,6 +14,7 @@
 // that stores all of the currently used vectors close to the execution units.
 
 `define X_INTERFACE
+`include "dca_interface/typedef.svh"
 
 module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import cc_pkg::*; #(
     parameter int                  unsigned NrMemPorts          = 1,
@@ -40,8 +41,12 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     parameter fpu_implementation_t          FPUImplementation   = fpu_implementation_t'(0),
     /// Address width of the scalar FPU LSU request interface.
     parameter int                  unsigned AddrWidth           = 32,
+    /// Enable external Direct Compute Access requests into the FPU lanes.
+    parameter bit                           EnableDca           = 1'b0,
     // Derived parameters. DO NOT CHANGE!
-    parameter int                  unsigned NumOutstandingLoads = 8
+    parameter int                  unsigned NumOutstandingLoads = 8,
+    localparam type                         dca_req_t           = `DCA_REQ_STRUCT(N_FPU*ELEN),
+    localparam type                         dca_rsp_t           = `DCA_RSP_STRUCT(N_FPU*ELEN)
   ) (
     input  logic                              clk_i,
     input  logic                              rst_ni,
@@ -93,7 +98,10 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     input  roundmode_e                        fpu_rnd_mode_i,
     input  fmt_mode_t                         fpu_fmt_mode_i,
     input  pace_mode_t                        fpu_pace_mode_i,
-    output status_t                           fpu_status_o
+    output status_t                           fpu_status_o,
+    // Direct Compute Access (DCA) interface
+    input  dca_req_t                          dca_req_i,
+    output dca_rsp_t                          dca_rsp_o
   );
 
   ////////////////
@@ -776,7 +784,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
 `endif
 
   spatz_vfu #(
-    .FPUImplementation(FPUImplementation)
+    .FPUImplementation(FPUImplementation),
+    .EnableDca        (EnableDca)
   ) i_vfu (
     .clk_i            (clk_i                                                   ),
     .rst_ni           (rst_ni                                                  ),
@@ -810,7 +819,10 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     // FPU side-channel
     .pace_mode_i      (fpu_pace_mode_i                                         ),
     .pace_param_i     (pace_params                                             ),
-    .fpu_status_o     (fpu_status_o                                            )
+    .fpu_status_o     (fpu_status_o                                            ),
+    // DCA
+    .dca_req_i        (dca_req_i                                               ),
+    .dca_rsp_o        (dca_rsp_o                                               )
   );
 
   //////////
