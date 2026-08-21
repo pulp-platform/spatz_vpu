@@ -109,11 +109,22 @@ package spatz_pkg;
 
   // Encodes both the scalar RD and the VD address in the VRF
   localparam int VFURespAddrWidth  = GPRWidth > $clog2(NrVRFWords) ? GPRWidth : $clog2(NrVRFWords);
+% if cfg.get('pace', False):
   localparam int PaceDegree        = 2;
   localparam int PaceParts         = 16;
   localparam int PaceEps           = 1;
   localparam int PaceDataWidth     = 32;
   localparam int PaceParamWidth    = ((PaceDegree + 1)*PaceParts + PaceParts - 1 + 2*PaceEps) * PaceDataWidth;
+% else:
+  // PACE disabled: keep the FPU's PACE datapath (fpnew_pace_fma_multi) from being
+  // synthesized at all -- EnablePace in fpnew_opgroup_multifmt_slice.sv is gated on
+  // PaceFeatures.FmtConfig being nonzero, so a zeroed struct below removes it.
+  localparam int PaceDegree        = 0;
+  localparam int PaceParts         = 0;
+  localparam int PaceEps           = 0;
+  localparam int PaceDataWidth     = 0;
+  localparam int PaceParamWidth    = 1; // avoid a zero-width pace_params/pace_param_i signal
+% endif
 
   //////////////////////
   // Type Definitions //
@@ -477,6 +488,16 @@ package spatz_pkg;
 
   localparam int unsigned FLEN = RVD ? 64 : 32;
 
+<%
+  # PACE disabled: '{default: 0} matches fpnew_pkg's own disabled-PACE presets
+  # (RV64D/RV32D/RV32F) and keeps EnablePace false in fpnew_opgroup_multifmt_slice.sv.
+  if cfg.get('pace', False):
+      pace_features_lit = ("'{PaceDegree: PaceDegree, PaceParts: PaceParts, PaceEps: 1'b1, "
+                            "PaceDataWidth: PaceDataWidth, PaceParamWidth: PaceParamWidth, "
+                            "PaceBstPipeRegs: 4'b0100, FmtConfig: 9'b101010000}")
+  else:
+      pace_features_lit = "'{default: 0}"
+%>\
   localparam fpnew_pkg::fpu_features_t FPUFeatures = RVD ?
   // Double Precision FPU
   '{
@@ -489,7 +510,7 @@ package spatz_pkg;
     IntFmtMask   : {1'b1, 1'b1, 1'b1, 1'b1},
     MxFpFmtMask  : 9'b0,
     MxIntFmtMask : 4'b0,
-    PaceFeatures : '{PaceDegree: PaceDegree, PaceParts: PaceParts, PaceEps: 1'b1, PaceDataWidth: PaceDataWidth, PaceParamWidth: PaceParamWidth, PaceBstPipeRegs: 4'b0100, FmtConfig: 9'b101010000}
+    PaceFeatures : ${pace_features_lit}
   } :
   // Single Precision FPU
   '{
@@ -502,7 +523,7 @@ package spatz_pkg;
     IntFmtMask   : {1'b1, 1'b1, 1'b1, 1'b0},
     MxFpFmtMask  : 9'b0,
     MxIntFmtMask : 4'b0,
-    PaceFeatures : '{PaceDegree: PaceDegree, PaceParts: PaceParts, PaceEps: 1'b1, PaceDataWidth: PaceDataWidth, PaceParamWidth: PaceParamWidth, PaceBstPipeRegs: 4'b0100, FmtConfig: 9'b101010000}
+    PaceFeatures : ${pace_features_lit}
   };
 
 % if cfg['mempool']:

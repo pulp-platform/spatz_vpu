@@ -105,6 +105,19 @@ Each Spatz has three functional units:
 
 The most up-to-date list of supported vector instructions can be found in `sw/riscvTests/CMakeLists.txt`. Spatz does not yet understand vector masking (although this is a work in progress), or fixed-point computation. It also does not understand many of the shuffling and permutation instructions of RVV (e.g., `vrgather`), and users are asked to shuffle data in memory through indexed memory operations. We very much welcome contributions that expand Spatz' capabilities as a vector coprocessor!
 
+### PACE (Polynomial Approximation Compute Engine)
+
+PACE evaluates a piecewise polynomial via Horner's method, reusing the FPU's multiply-add datapath. Software reaches it by setting the `enable` bit in the `CSR_PACE` (`0xba0`) mode register, which reinterprets a plain `vfmul.vv` as a polynomial evaluation (`fpnew_pkg::PWPA`) instead of a real multiply — no new opcode is involved. The mode register is a 5-bit packed value, MSB-first: `{extend:1, enable:1, degree[2:0]}`.
+
+There is no dedicated load path for the polynomial's coefficients: priming `pace_mem` means issuing an ordinary vector load while `enable` is set — its VRF write is redirected into the coefficient memory instead of landing in a vector register. This has a few sharp edges worth knowing before writing PACE-using code:
+
+- **`write_csr()` cannot take a `#define`d register argument.** The macro stringifies its register operand via the preprocessor's `#`, which does not expand macro arguments used that way — `write_csr(CSR_PACE, ...)` literally emits `csrw CSR_PACE, ...`. Pass the numeric address as a literal at the call site instead (`write_csr(0xba0, ...)`).
+- **No ready/done signal is exposed to software.** There is nothing to poll for "coefficients are fully loaded" — synchronization between the priming load and the first real PWPA use is left entirely to the caller (e.g. a handful of `nop`s).
+- **Under `double_bw`, a single coefficient load must stay at or under `SpatzMemBytes / 2` bytes**, where `SpatzMemBytes = NrMemPorts * ELENB` for your own build (check `spatz_doublebw_vlsu.sv`/the generated `spatz_pkg` for the resolved values rather than assuming a fixed number). `pace_mem` only ever wires up VLSU write interface 0; a bigger single load gets split across both VLSU interfaces by the double-bandwidth datapath, and whatever lands on interface 1 is silently dropped — with no error, no assertion, just wrong (X) data downstream. Chunk larger coefficient tables into multiple loads of `SpatzMemBytes / 2` bytes each instead of one big load (see the `snrt`-side test `pace_vfmul.c` in the `snitch_cluster` repository for a worked example, though its chunk size is specific to that test's own config and should be recomputed for a different one).
+- **Coefficient/boundary layout is a manual contract, not a documented struct.** Coefficients are stored degree-major, partition-minor; interval boundaries are stored in implicit balanced-binary-search-tree order, not sorted order. Get this wrong and results are silently incorrect rather than flagged.
+- **Hardware configuration is fixed at elaboration time** (`PaceDegree`, `PaceParts`, `PaceDataWidth`, format support) via `spatz_pkg.sv.tpl` — changing polynomial degree, partition count, or supported FP formats requires regenerating hardware, not just adjusting software.
+- Only the generic piecewise-polynomial path (`PWPA`, reached via `vfmul`) is wired into Spatz's decoder. The FPU also implements dedicated `PACE_INV`/`PACE_SQRT`/`PACE_RSQRT` fast paths, but nothing in the decoder currently emits them.
+
 ## License
 
 Spatz is being made available under permissive open-source licenses.

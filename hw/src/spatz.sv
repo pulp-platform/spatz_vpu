@@ -452,15 +452,12 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
 `endif
 
   // PACE parameter memory
+`ifdef PACE
   // With DOUBLE_BW both VLSU write ports carry consecutive 256-bit chunks each cycle,
   // so we must capture both to reconstruct the contiguous parameter stream.
-`ifdef DOUBLE_BW
   // Use WD0-only for pace_mem: each beat captures 256 bits from WD0 (lower addresses).
   // This avoids requiring simultaneous WD0+WD1 grants, which is unreliable in DOUBLE_BW.
   localparam int unsigned PaceBufWidth = N_FU * ELEN;
-`else
-  localparam int unsigned PaceBufWidth = N_FU * ELEN;
-`endif
 `ifdef DOUBLE_BW
   localparam int unsigned PaceLdIdx    = VLSU_VD_WD0;
 `else
@@ -487,6 +484,15 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     vrf_wvalid[VLSU_VD_WD1]  = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? vrf_we[VLSU_VD_WD1] : vrf_wvalid_mask[VLSU_VD_WD1];
 `endif
   end
+`else
+  // PACE disabled: no pace_mem, VRF writes pass straight through unmasked.
+  always_comb begin
+    vrf_we_mask = vrf_we;
+    vrf_wvalid  = vrf_wvalid_mask;
+  end
+  logic [PaceParamWidth-1:0] pace_params;
+  assign pace_params = '0;
+`endif
 
   spatz_vrf #(
     .NrReadPorts (NrReadPorts ),
@@ -530,6 +536,7 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
 `endif
   );
 
+`ifdef PACE
   pace_mem #(
     .BufDepth  (PaceBufDepth ),
     .BufWidth  (PaceBufWidth ),
@@ -547,6 +554,7 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
 `endif
     .data_o (pace_params            )
   );
+`endif
 
   ////////////////
   // Controller //
