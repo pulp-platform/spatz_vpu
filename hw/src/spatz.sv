@@ -698,7 +698,17 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     sb_buf_id = sb_id;
     // Responses
     vfu_rsp_buf = vfu_rsp;
-    vfu_rsp_buf_valid = vfu_rsp_valid;
+    // vfu_rsp_valid (result_tag.last && ...) is computed inside spatz_vfu.sv
+    // purely from its own internal pipeline state, with no confirmation that
+    // the corresponding VRF write request was actually accepted this cycle.
+    // The i_vfu_buf FIFO below only re-adds that vrf_wvalid confirmation
+    // while it is actively buffering (write-port contention); the common
+    // buffer-empty passthrough case had none, letting the controller clear
+    // this instruction's write_table/scoreboard entry (unblocking dependent
+    // reads) before the VRF write for the last element has actually landed.
+    // A "wb" (scalar move, e.g. vmv.x.s) response never issues a VRF write
+    // at all, so it must not be gated on vrf_wvalid.
+    vfu_rsp_buf_valid = vfu_rsp_valid & (vfu_rsp.wb | vrf_wvalid[VFU_VD_WD]);
     vlsu_rsp_buf = vlsu_rsp;
     vlsu_rsp_buf_valid = vlsu_rsp_valid;
 
@@ -722,8 +732,11 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
 
 `ifdef DOUBLE_BW
     // VLSU1 buffering
-    // Check if interface 1 response is being buffered, if so do not send response now
-    if (vlsu_rsp_valid && (vlsu_rsp.intf_id == 1'b1) && vlsu_buf_push)
+    // Do not retire a load response while interface 1's final VRF write is
+    // only being accepted into the conflict buffer. The dependent consumer
+    // would otherwise observe the load as finished before the buffered word
+    // has become visible in the VRF.
+    if (vlsu_rsp_valid && vlsu_buf_push)
       vlsu_rsp_buf_valid = 1'b0;
 
     if (!vlsu_buf_empty) begin
