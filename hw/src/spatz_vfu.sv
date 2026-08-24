@@ -232,8 +232,8 @@ module spatz_vfu
   logic [N_FU*ELENB-1:0] result_valid;
   logic                  result_ready;
 
-  // it represents the VRF word index
-  logic [$clog2(NrWordsPerVector):0] word_idx_d, word_idx_q;
+  // it represents the VRF word index. Multiplication by 8 to account for LMUL
+  logic [$clog2(NrWordsPerVector*8):0] word_idx_d, word_idx_q;
   `FF(word_idx_q, word_idx_d, '0)
 
   always_comb begin: control_proc
