@@ -99,6 +99,10 @@ module spatz_decoder
           automatic logic ls_mew         = decoder_req_i.instr[28];
           automatic logic [2:0] ls_nf    = decoder_req_i.instr[31:29];
 
+          if (decoder_req_i.vtype.vill) begin
+            illegal_instr = 1'b1;
+          end
+
           // Retrieve VSEW
           unique case ({ls_mew, ls_width})
             4'b0000: spatz_req.vtype.vsew = EW_8;
