@@ -912,7 +912,7 @@ module spatz_vfu
         // Did we issue a word to the FUs?
         word_issued = spatz_req_valid && &(in_ready | ~valid_operations) && operands_ready && !stall
         && (!((divsqrt_shared_active) && !(&(result_valid | ~pending_results)))
-        || (!(divsqrt_shared_active) || (result_tag.last && (fpu_result_valid[ELENB-1:0] == '1))));// it is not correct what if the vlen < full
+        || (!(divsqrt_shared_active) || (result_tag.last && (fpu_result_valid[ELENB-1:0] == '1))));
 
         // Are we ready to accept a result?
         result_ready = &(result_valid | ~pending_results) && ((result_tag.wb && vfu_rsp_ready_i) || vrf_wvalid_i || (result_tag.is_cmp && !result_tag.last));
