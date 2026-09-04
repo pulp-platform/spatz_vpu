@@ -104,11 +104,8 @@ package spatz_pkg;
   localparam int unsigned NrParallelInstructions = 4;
 `endif
 
-`ifdef DIVSQRT_IS_SHARED
-  localparam bit divsqrt_is_shared = 1;
-`else
-  localparam bit divsqrt_is_shared = 0;
-`endif
+  localparam bit divsqrt_is_shared = ${cfg['divsqrt_is_shared']};
+
 
   // Largest element width that Spatz supports
   localparam vew_e MAXEW = RVD ? EW_64 : EW_32;
