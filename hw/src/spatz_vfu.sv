@@ -1304,6 +1304,8 @@ module spatz_vfu
         .op_mod_i      (fpu_req_q.op_mod),
         .tag_i         (fpu_req_q.tag),
         .simd_mask_i   ('1),
+        .pace_param_i  ('0),
+        .pace_mode_i   ('0),
         .rnd_mode_i    (fpu_req_q.rnd_mode),
         .result_o      (muxed_fpu_rsp.p.result),
         .out_valid_o   (muxed_fpu_rsp.p_valid),
