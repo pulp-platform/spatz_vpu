@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Author: Cyril Koenig, ETH Zurich
+// Author: Axel Vanoni, ETH Zurich
+
+`include "common_cells/registers.svh"
 
 module vregfile import spatz_pkg::*; #(
     parameter int  unsigned NrReadPorts = 0,
@@ -26,21 +29,31 @@ module vregfile import spatz_pkg::*; #(
     output data_t [NrReadPorts-1:0] rdata_o
   );
 
-  // Just reuse snitch_regfile that has a FPGA implementation
+  localparam int NumBytes = WordWidth / 8;
 
-  snitch_regfile #(
-    .DATA_WIDTH(WordWidth),
-    .NR_READ_PORTS(NrReadPorts),
-    .NR_WRITE_PORTS(1),
-    .ZERO_REG_ZERO(0),
-    .ADDR_WIDTH($bits(addr_t))
-  ) i_snitch_regfile (
-    .clk_i,
-    .raddr_i,
-    .rdata_o,
-    .waddr_i,
-    .wdata_i,
-    .we_i
-  );
+  logic [NrWords-1:0][WordWidth/8-1:0][7:0] mem_d;
+  logic [NrWords-1:0][WordWidth/8-1:0][7:0] mem_q;
+
+
+  for (genvar i = 0; i < NrReadPorts; i++) begin : gen_read_port
+    assign rdata_o[i] = mem_q[raddr_i[i]];
+  end
+
+  always_comb begin
+    mem_d = mem_q;
+
+    if (we_i) begin
+      for (int word = 0; word < NrWords; word++) begin
+        for (int i = 0; i < NumBytes; i++) begin
+          if (word == waddr_i && wbe_i[i]) begin
+            mem_d[word][i] = wdata_i[8*i+:8];
+          end
+        end
+      end
+    end
+
+  end // always_comb
+
+  `FF(mem_q, mem_d, '0);
 
 endmodule : vregfile
