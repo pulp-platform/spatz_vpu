@@ -99,10 +99,6 @@ module spatz_decoder
           automatic logic ls_mew         = decoder_req_i.instr[28];
           automatic logic [2:0] ls_nf    = decoder_req_i.instr[31:29];
 
-          if (decoder_req_i.vtype.vill) begin
-            illegal_instr = 1'b1;
-          end
-
           // Retrieve VSEW
           unique case ({ls_mew, ls_width})
             4'b0000: spatz_req.vtype.vsew = EW_8;
@@ -430,10 +426,6 @@ module spatz_decoder
           spatz_req.use_vd      = 1'b1;
           spatz_req.vd          = arith_d;
           spatz_req.ex_unit     = VFU;
-
-          if (decoder_req_i.vtype.vill) begin
-            illegal_instr = 1'b1;
-          end
 
           // Decide which operands to use (vs1 or rs1 or imm)
           unique case (func3)
@@ -945,10 +937,6 @@ module spatz_decoder
           automatic vreg_t arith_s2 = decoder_req_i.instr[24:20];
           automatic vreg_t arith_d  = decoder_req_i.instr[11:7];
 
-          if (decoder_req_i.vtype.vill) begin
-            illegal_instr = 1'b1;
-          end
-
           spatz_req.op                 = VADD;
           spatz_req.ex_unit            = VFU;
           spatz_req.rd                 = arith_d;
@@ -1065,10 +1053,6 @@ module spatz_decoder
             spatz_req.ex_unit     = VFU;
             spatz_req.rm          = fpu_rnd_mode_i;
             spatz_req.fm          = fpu_fmt_mode_i;
-
-            if (decoder_req_i.vtype.vill) begin
-              illegal_instr = 1'b1;
-            end
 
             // Decide which operands to use (vs2 or rs1 or imm)
             unique case (func3)
@@ -1513,10 +1497,6 @@ module spatz_decoder
           if (spatz_pkg::FPU) begin
             automatic vreg_t arith_s2 = decoder_req_i.instr[24:20];
             automatic vreg_t arith_d  = decoder_req_i.instr[11:7];
-
-            if (decoder_req_i.vtype.vill) begin
-              illegal_instr = 1'b1;
-            end
 
             spatz_req.op                 = VADD;
             spatz_req.ex_unit            = VFU;
