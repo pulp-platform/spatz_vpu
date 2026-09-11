@@ -828,12 +828,12 @@ module spatz_vfu
   assign fu_can_accept = spatz_req_valid && &(in_ready | ~valid_operations) && operands_ready && !stall;
 
   // Last element of the instruction has just exited FPU0. This is needed because the final word may not fill all slots
-  logic divsqrt_tail_done;
-  assign divsqrt_tail_done = result_tag.last && (fpu_result_valid[ELENB-1:0] == '1);
+  logic fu_tail_done;
+  assign fu_tail_done = result_tag.last && (fpu_result_valid[ELENB-1:0] == '1);
 
   // the word can only advance when all slots have been consumed
-  logic divsqrt_word_done;
-  assign divsqrt_word_done = !divsqrt_shared_active || fu_word_complete || divsqrt_tail_done;
+  logic fu_word_can_advance;
+  assign fu_word_can_advance = !divsqrt_shared_active || fu_word_complete || fu_tail_done;
 
   always_comb begin: proc_reduction
     // Maintain state
@@ -929,7 +929,7 @@ module spatz_vfu
     unique case (reduction_state_q)
       Reduction_NormalExecution: begin
         // Did we issue a word to the FUs?
-        word_issued = fu_can_accept && divsqrt_word_done;
+        word_issued = fu_can_accept && fu_word_can_advance;
 
         // Are we ready to accept a result?
         result_ready = fu_word_complete && ((result_tag.wb && vfu_rsp_ready_i) || vrf_wvalid_i || (result_tag.is_cmp && !result_tag.last));
