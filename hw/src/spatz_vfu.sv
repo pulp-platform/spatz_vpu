@@ -253,6 +253,10 @@ module spatz_vfu
 
   `FF(word_idx_q, word_idx_d, '0)
 
+  // All the results of the current VRF word in the FUs are ready
+  logic fu_word_complete;
+  assign fu_word_complete = &(result_valid | ~pending_results);
+
   always_comb begin: control_proc
     // Maintain state
     vl_d              = vl_q;
@@ -312,7 +316,7 @@ module spatz_vfu
 
     // Finished the execution!
     if (spatz_req_valid && ((vl_d >= spatz_req.vl && !spatz_req.op_arith.is_reduction) || reduction_done || last_divsqrt)) begin
-      if((spatz_req.op == VFDIV || spatz_req.op == VFSQRT) && divsqrt_is_shared) begin
+      if(divsqrt_shared_active) begin
           last_request            = 1'b1;
         if(result_tag.last)begin
           spatz_req_ready         = spatz_req_valid;
@@ -345,7 +349,7 @@ module spatz_vfu
     end
 
     // An instruction finished execution
-    if ((result_tag.last && &(result_valid | ~pending_results) && (reduction_state_q inside {Reduction_NormalExecution, Reduction_Wait} || ! result_tag.reduction)) || reduction_done) begin
+    if ((result_tag.last && fu_word_complete && (reduction_state_q inside {Reduction_NormalExecution, Reduction_Wait} || ! result_tag.reduction)) || reduction_done) begin
       vfu_rsp_o.id      = result_tag.id;
       vfu_rsp_o.rd      = result_tag.vd_addr[GPRWidth-1:0];
       vfu_rsp_o.wb      = result_tag.wb;
@@ -675,6 +679,9 @@ module spatz_vfu
   end : proc_divsqrt_acc
 
   always_comb begin : proc_fpu_result_mux
+    fpu_result_temp       = '0;
+    fpu_result_valid_temp = '0;
+
     if (divsqrt_shared_active) begin
       fpu_result_temp       = divsqrt_acc_q;
       fpu_result_valid_temp = divsqrt_acc_valid_q;
@@ -816,6 +823,18 @@ module spatz_vfu
     end
   end
 
+  // FUs can accept a new word of operands
+  logic fu_can_accept;
+  assign fu_can_accept = spatz_req_valid && &(in_ready | ~valid_operations) && operands_ready && !stall;
+
+  // Last element of the instruction has just exited FPU0. This is needed because the final word may not fill all slots
+  logic divsqrt_tail_done;
+  assign divsqrt_tail_done = result_tag.last && (fpu_result_valid[ELENB-1:0] == '1);
+
+  // the word can only advance when all slots have been consumed
+  logic divsqrt_word_done;
+  assign divsqrt_word_done = !divsqrt_shared_active || fu_word_complete || divsqrt_tail_done;
+
   always_comb begin: proc_reduction
     // Maintain state
     reduction_state_d   = reduction_state_q;
@@ -910,12 +929,10 @@ module spatz_vfu
     unique case (reduction_state_q)
       Reduction_NormalExecution: begin
         // Did we issue a word to the FUs?
-        word_issued = spatz_req_valid && &(in_ready | ~valid_operations) && operands_ready && !stall
-        && (!((divsqrt_shared_active) && !(&(result_valid | ~pending_results)))
-        || (!(divsqrt_shared_active) || (result_tag.last && (fpu_result_valid[ELENB-1:0] == '1))));
+        word_issued = fu_can_accept && divsqrt_word_done;
 
         // Are we ready to accept a result?
-        result_ready = &(result_valid | ~pending_results) && ((result_tag.wb && vfu_rsp_ready_i) || vrf_wvalid_i || (result_tag.is_cmp && !result_tag.last));
+        result_ready = fu_word_complete && ((result_tag.wb && vfu_rsp_ready_i) || vrf_wvalid_i || (result_tag.is_cmp && !result_tag.last));
 
         // Initialize the pointers
         reduction_pointer_d = '0;
@@ -927,7 +944,7 @@ module spatz_vfu
 
       Reduction_Wait: begin
         // Are we ready to accept a result?
-        result_ready = &(result_valid | ~pending_results) && ((result_tag.wb && vfu_rsp_ready_i) || vrf_wvalid_i);
+        result_ready = fu_word_complete && ((result_tag.wb && vfu_rsp_ready_i) || vrf_wvalid_i);
 
         if (!is_fpu_busy)
           reduction_state_d = Reduction_Init;
@@ -1295,7 +1312,7 @@ module spatz_vfu
       default:;
     endcase
     // Got a new result
-    if (&(result_valid | ~pending_results) && !result_tag.reduction) begin
+    if (fu_word_complete && !result_tag.reduction) begin
       vreg_we  = !result_tag.wb;
       if (result_tag.is_cmp) begin
         vreg_we    = result_tag.last;
@@ -1337,12 +1354,12 @@ always_comb begin : vreg_wbe_proc
     end else
       tail_wbe_eff = tail_wbe;
 
-    if ((result_tag.last && &(result_valid | ~pending_results) && (reduction_state_q inside {Reduction_NormalExecution, Reduction_Wait})) || reduction_done)
+    if ((result_tag.last && fu_word_complete && (reduction_state_q inside {Reduction_NormalExecution, Reduction_Wait})) || reduction_done)
       vreg_wb_word_cnt_d = 0;
-    else if (&(result_valid | ~pending_results) && (!result_tag.narrowing || result_tag.narrowing_upper))
+    else if (fu_word_complete && (!result_tag.narrowing || result_tag.narrowing_upper))
       vreg_wb_word_cnt_d = vreg_wb_word_cnt_q + 1;
     // Got a new result
-    if (&(result_valid | ~pending_results) && !result_tag.reduction) begin
+    if (fu_word_complete && !result_tag.reduction) begin
       vreg_wbe = '1;
       if (result_tag.is_cmp) begin
         // every vector element requires 1 bit of wbe --> ceil(vl/8)
@@ -1402,7 +1419,7 @@ always_comb begin : vreg_wbe_proc
 end:vreg_wbe_proc
 
 logic vfcmp_result_accepted;
-assign vfcmp_result_accepted = result_tag.is_cmp && &(result_valid | ~pending_results) && result_ready;
+assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_ready;
 
   always_comb begin : VRF_cnt_proc
     word_idx_d = word_idx_q;
