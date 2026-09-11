@@ -427,10 +427,6 @@ module spatz_decoder
           spatz_req.vd          = arith_d;
           spatz_req.ex_unit     = VFU;
 
-          if (decoder_req_i.vtype.vill) begin
-            illegal_instr = 1'b1;
-          end
-
           // Decide which operands to use (vs1 or rs1 or imm)
           unique case (func3)
             OPIVV,
@@ -941,10 +937,6 @@ module spatz_decoder
           automatic vreg_t arith_s2 = decoder_req_i.instr[24:20];
           automatic vreg_t arith_d  = decoder_req_i.instr[11:7];
 
-          if (decoder_req_i.vtype.vill) begin
-            illegal_instr = 1'b1;
-          end
-
           spatz_req.op                 = VADD;
           spatz_req.ex_unit            = VFU;
           spatz_req.rd                 = arith_d;
@@ -1061,10 +1053,6 @@ module spatz_decoder
             spatz_req.ex_unit     = VFU;
             spatz_req.rm          = fpu_rnd_mode_i;
             spatz_req.fm          = fpu_fmt_mode_i;
-
-            if (decoder_req_i.vtype.vill) begin
-              illegal_instr = 1'b1;
-            end
 
             // Decide which operands to use (vs2 or rs1 or imm)
             unique case (func3)
@@ -1510,10 +1498,6 @@ module spatz_decoder
             automatic vreg_t arith_s2 = decoder_req_i.instr[24:20];
             automatic vreg_t arith_d  = decoder_req_i.instr[11:7];
 
-            if (decoder_req_i.vtype.vill) begin
-              illegal_instr = 1'b1;
-            end
-
             spatz_req.op                 = VADD;
             spatz_req.ex_unit            = VFU;
             spatz_req.rd                 = arith_d;
@@ -1540,10 +1524,6 @@ module spatz_decoder
           spatz_req.vtype.vsew         = EW_32;
           spatz_req.op_arith.is_scalar = 1'b1;
 
-          if (decoder_req_i.vtype.vill) begin
-            illegal_instr = 1'b1;
-          end
-
           unique casez (decoder_req_i.instr)
             riscv_instr::MUL   : spatz_req.op = VMUL;
             riscv_instr::MULH  : spatz_req.op = VMULH;
@@ -1566,10 +1546,6 @@ module spatz_decoder
           spatz_req.rs2                = decoder_req_i.rs1;
           spatz_req.vtype.vsew         = EW_32;
           spatz_req.op_arith.is_scalar = 1'b1;
-
-          if (decoder_req_i.vtype.vill) begin
-            illegal_instr = 1'b1;
-          end
 
           unique casez (decoder_req_i.instr)
             riscv_instr::DIV : spatz_req.op = VDIV;
@@ -1614,10 +1590,6 @@ module spatz_decoder
             spatz_req.rm                 = fpu_rnd_mode_i;
             spatz_req.fm                 = fpu_fmt_mode_i;
             spatz_req.vtype.vsew         = EW_8;
-
-            if (decoder_req_i.vtype.vill) begin
-              illegal_instr = 1'b1;
-            end
 
             unique casez (decoder_req_i.instr)
               riscv_instr::FADD_B : spatz_req.op = VFADD;
@@ -1722,10 +1694,6 @@ module spatz_decoder
             spatz_req.rm                 = fpu_rnd_mode_i;
             spatz_req.fm                 = fpu_fmt_mode_i;
             spatz_req.vtype.vsew         = EW_16;
-
-            if (decoder_req_i.vtype.vill) begin
-              illegal_instr = 1'b1;
-            end
 
             unique casez (decoder_req_i.instr)
               riscv_instr::FADD_H : spatz_req.op = VFADD;
@@ -1832,10 +1800,6 @@ module spatz_decoder
             spatz_req.fm                 = fpu_fmt_mode_i;
             spatz_req.vtype.vsew         = EW_32;
 
-            if (decoder_req_i.vtype.vill) begin
-              illegal_instr = 1'b1;
-            end
-
             unique casez (decoder_req_i.instr)
               riscv_instr::FADD_S : spatz_req.op = VFADD;
               riscv_instr::FSUB_S : begin
@@ -1938,10 +1902,6 @@ module spatz_decoder
             spatz_req.rm                 = fpu_rnd_mode_i;
             spatz_req.fm                 = fpu_fmt_mode_i;
             spatz_req.vtype.vsew         = EW_64;
-
-            if (decoder_req_i.vtype.vill) begin
-              illegal_instr = 1'b1;
-            end
 
             unique casez (decoder_req_i.instr)
               riscv_instr::FADD_D : spatz_req.op = VFADD;
