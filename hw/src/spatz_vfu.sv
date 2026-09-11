@@ -71,6 +71,8 @@ module spatz_vfu
     vlen_t vl;
     // Is this instruction unmasked?
     logic vm;
+    // Is this instruction mask agnostic?
+    logic vma;
     // Is this merge instruction?
     logic is_merge;
     // valid bytes in this VRF word
@@ -633,6 +635,10 @@ module spatz_vfu
   logic [VLEN-1:0] cmp_mask_dst_q;
   assign cmp_mask_dst_q = {cmp_mask_dst_hi_q, cmp_mask_dst_lo_q};
 
+  // Inactive elements are set to 1 under ma and left undisturbed under mu
+  logic [VLEN-1:0] cmp_dst_inactive;
+  assign cmp_dst_inactive = result_tag.vma ? '1 : cmp_mask_dst_q;
+
   ///////////////////////
   //  Reduction logic  //
   ///////////////////////
@@ -1133,6 +1139,7 @@ module spatz_vfu
       is_cmp         : is_cmp_req,
       vl             : spatz_req.vl,
       vm             : spatz_req.op_arith.vm,
+      vma            : spatz_req.vtype.vma,
       is_merge       : (spatz_req.op == VMERGE),
       valid_bytes    : valid_bytes_wr // count of the number of valid bytes in the VRF word (write side)
     };
@@ -1400,7 +1407,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && &(result_valid | ~pending_re
       if(result_tag.vm)
         vrf_wdata_o = wdata_q | vreg_wdata;
       else
-        vrf_wdata_o = ((wdata_q | vreg_wdata) & operand_v0_t_q) | (cmp_mask_dst_q & ~operand_v0_t_q);
+        vrf_wdata_o = ((wdata_q | vreg_wdata) & operand_v0_t_q) | (cmp_dst_inactive & ~operand_v0_t_q);
     end else begin
       vrf_wdata_o = vreg_wdata;
     end
