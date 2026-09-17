@@ -245,6 +245,7 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
           simd_result    = div_result;
           result_valid_o = div_out_valid;
         end
+        VMERGE: simd_result = op_s1_i;
         default: simd_result = '0;
       endcase // operation_i
     end
