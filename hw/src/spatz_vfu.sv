@@ -841,7 +841,7 @@ module spatz_vfu
         word_issued = spatz_req_valid && &(in_ready | ~valid_operations) && operands_ready && !stall;
 
         // Are we ready to accept a result?
-        result_ready = &(result_valid | ~pending_results) && ((result_tag.wb && vfu_rsp_ready_i) || vrf_wvalid_i || (!cmp_word_done));
+        result_ready = &(result_valid | ~pending_results) && ((result_tag.wb && vfu_rsp_ready_i) || vrf_wvalid_i || (result_tag.is_cmp && !cmp_word_done));
 
         // Initialize the pointers
         reduction_pointer_d = '0;
