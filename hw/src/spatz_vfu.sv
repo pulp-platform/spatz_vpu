@@ -516,6 +516,11 @@ module spatz_vfu
   logic [N_FU*ELEN-1:0] cmp_mask_dst_lo, cmp_mask_dst_lo_q;
   logic [N_FU*ELEN-1:0] cmp_mask_dst_hi, cmp_mask_dst_hi_q;
 
+  logic [VLEN-1:0] operand_v0_t_q;
+  assign operand_v0_t_q = {operand_v0_t_hi_q, operand_v0_t_lo_q};
+  logic [VLEN-1:0] cmp_mask_dst_q;
+  assign cmp_mask_dst_q = {cmp_mask_dst_hi_q, cmp_mask_dst_lo_q};
+
     // The signal to choose comparison instructions  
   logic is_cmp_req;
   assign is_cmp_req = (spatz_req.op == VFCMP) || spatz_req.op inside {VMSEQ, VMSNE, VMSLT, VMSLTU, VMSLE, VMSLEU, VMSGT, VMSGTU};
@@ -641,11 +646,6 @@ module spatz_vfu
   `FFL(operand_v0_t_hi_q, operand_v0_t_hi, v0_t_is_ready, '0)
   `FFL(cmp_mask_dst_lo_q, cmp_mask_dst_lo, vd_t_is_ready, '0)
   `FFL(cmp_mask_dst_hi_q, cmp_mask_dst_hi, vd_t_is_ready, '0)
-
-  logic [VLEN-1:0] operand_v0_t_q;
-  assign operand_v0_t_q = {operand_v0_t_hi_q, operand_v0_t_lo_q};
-  logic [VLEN-1:0] cmp_mask_dst_q;
-  assign cmp_mask_dst_q = {cmp_mask_dst_hi_q, cmp_mask_dst_lo_q};
 
   // Inactive elements are set to 1 under ma and left undisturbed under mu
   logic [VLEN-1:0] cmp_dst_inactive;
