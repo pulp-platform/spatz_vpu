@@ -516,6 +516,11 @@ module spatz_vfu
   logic [N_FU*ELEN-1:0] cmp_mask_dst_lo, cmp_mask_dst_lo_q;
   logic [N_FU*ELEN-1:0] cmp_mask_dst_hi, cmp_mask_dst_hi_q;
 
+  logic [VLEN-1:0] operand_v0_t_q;
+  assign operand_v0_t_q = {operand_v0_t_hi_q, operand_v0_t_lo_q};
+  logic [VLEN-1:0] cmp_mask_dst_q;
+  assign cmp_mask_dst_q = {cmp_mask_dst_hi_q, cmp_mask_dst_lo_q};
+
     // The signal to choose comparison instructions  
   logic is_cmp_req;
   assign is_cmp_req = (spatz_req.op == VFCMP) || spatz_req.op inside {VMSEQ, VMSNE, VMSLT, VMSLTU, VMSLE, VMSLEU, VMSGT, VMSGTU};
@@ -604,6 +609,19 @@ module spatz_vfu
                 EW_32: operand2   = MAXEW == EW_32 ? {1*N_FU{spatz_req.rs2[31:0]}} : {2*N_FU{spatz_req.rs2[31:0]}};
                 default: operand2 = {1*N_FU{spatz_req.rs2}};
               endcase
+
+            if (spatz_req.op == VMERGE) begin
+              automatic logic [N_FU*ELEN-1:0] mmask;
+              mmask = '0;
+              unique case (spatz_req.vtype.vsew)
+                EW_8:  for (int e = 0; e < N_FU*ELENB;   e++) mmask[e*8  +: 8]  = {8 {operand_v0_t_q[vl_q + e]}};
+                EW_16: for (int e = 0; e < N_FU*ELENB/2; e++) mmask[e*16 +: 16] = {16{operand_v0_t_q[vl_q + e]}};
+                EW_32: for (int e = 0; e < N_FU*ELENB/4; e++) mmask[e*32 +: 32] = {32{operand_v0_t_q[vl_q + e]}};
+                default: if (MAXEW == EW_64)
+                      for (int e = 0; e < N_FU*ELENB/8; e++) mmask[e*64 +: 64] = {64{operand_v0_t_q[vl_q + e]}};
+              endcase
+              operand1 = (operand1 & mmask) | (operand2 & ~mmask);
+            end
           end
       end
       READ_V0_t: begin
@@ -629,11 +647,6 @@ module spatz_vfu
   `FFL(operand_v0_t_hi_q, operand_v0_t_hi, v0_t_is_ready, '0)
   `FFL(cmp_mask_dst_lo_q, cmp_mask_dst_lo, vd_t_is_ready, '0)
   `FFL(cmp_mask_dst_hi_q, cmp_mask_dst_hi, vd_t_is_ready, '0)
-
-  logic [VLEN-1:0] operand_v0_t_q;
-  assign operand_v0_t_q = {operand_v0_t_hi_q, operand_v0_t_lo_q};
-  logic [VLEN-1:0] cmp_mask_dst_q;
-  assign cmp_mask_dst_q = {cmp_mask_dst_hi_q, cmp_mask_dst_lo_q};
 
   // Inactive elements are set to 1 under ma and left undisturbed under mu
   logic [VLEN-1:0] cmp_dst_inactive;
