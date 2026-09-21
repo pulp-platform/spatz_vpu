@@ -609,18 +609,19 @@ module spatz_vfu
                 EW_32: operand2   = MAXEW == EW_32 ? {1*N_FU{spatz_req.rs2[31:0]}} : {2*N_FU{spatz_req.rs2[31:0]}};
                 default: operand2 = {1*N_FU{spatz_req.rs2}};
               endcase
-          end
-          if (spatz_req.op == VMERGE) begin
-            automatic logic [N_FU*ELEN-1:0] mmask;
-            mmask = '0;
-            unique case (spatz_req.vtype.vsew)
-              EW_8:  for (int e = 0; e < N_FU*ELENB;   e++) mmask[e*8  +: 8]  = {8 {operand_v0_t_q[vl_q + e]}};
-              EW_16: for (int e = 0; e < N_FU*ELENB/2; e++) mmask[e*16 +: 16] = {16{operand_v0_t_q[vl_q + e]}};
-              EW_32: for (int e = 0; e < N_FU*ELENB/4; e++) mmask[e*32 +: 32] = {32{operand_v0_t_q[vl_q + e]}};
-              default: if (MAXEW == EW_64)
-                     for (int e = 0; e < N_FU*ELENB/8; e++) mmask[e*64 +: 64] = {64{operand_v0_t_q[vl_q + e]}};
-            endcase
-            operand1 = (operand1 & mmask) | (operand2 & ~mmask);
+
+            if (spatz_req.op == VMERGE) begin
+              automatic logic [N_FU*ELEN-1:0] mmask;
+              mmask = '0;
+              unique case (spatz_req.vtype.vsew)
+                EW_8:  for (int e = 0; e < N_FU*ELENB;   e++) mmask[e*8  +: 8]  = {8 {operand_v0_t_q[vl_q + e]}};
+                EW_16: for (int e = 0; e < N_FU*ELENB/2; e++) mmask[e*16 +: 16] = {16{operand_v0_t_q[vl_q + e]}};
+                EW_32: for (int e = 0; e < N_FU*ELENB/4; e++) mmask[e*32 +: 32] = {32{operand_v0_t_q[vl_q + e]}};
+                default: if (MAXEW == EW_64)
+                      for (int e = 0; e < N_FU*ELENB/8; e++) mmask[e*64 +: 64] = {64{operand_v0_t_q[vl_q + e]}};
+              endcase
+              operand1 = (operand1 & mmask) | (operand2 & ~mmask);
+            end
           end
       end
       READ_V0_t: begin
