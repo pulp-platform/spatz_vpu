@@ -15,7 +15,7 @@ cfg_source_path = Path(sys.argv[1])
 cfg_name = cfg_source_path.stem   # strip extension; apply_cfg.py appends .hjson
 
 SPATZ_KEYS = ['mempool', 'vlen', 'n_fpu', 'n_ipu', 'spatz_fpu', 'spatz_nports',
-              'double_bw', 'buf_fpu', 'pace', 'rvf', 'rvd']
+              'double_bw', 'buf_fpu', 'pace', 'rvf', 'rvd', 'xf16alt', 'fp64']
 
 DEFAULT_SPATZ_CFG = {
     'mempool': False,
@@ -29,6 +29,8 @@ DEFAULT_SPATZ_CFG = {
     'pace': False,
     'rvf': True,
     'rvd': True,
+    'xf16alt': False,
+    'fp64': True,
 }
 
 with open(cfg_source_path, "r") as f:

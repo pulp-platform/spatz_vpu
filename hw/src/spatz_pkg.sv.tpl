@@ -497,6 +497,13 @@ package spatz_pkg;
                             "PaceBstPipeRegs: 4'b0100, FmtConfig: 9'b101010000}")
   else:
       pace_features_lit = "'{default: 0}"
+  xf16alt = int(cfg.get('xf16alt', False))
+  # RVD still selects the 64b-datapath (ELEN=64) FPUFeatures branch below, but
+  # the FP64 *arithmetic* format can be independently disabled: with FP64 off,
+  # fpnew's per-lane FMA sizing (fpnew_pkg::max_fp_width of the active formats
+  # in a lane) never needs a 64b-wide FMA, so it falls back to 32b-class FMA
+  # blocks while the surrounding datapath (regfile/LSU/Width) stays 64b.
+  fp64 = int(cfg.get('fp64', True))
 %>\
   localparam fpnew_pkg::fpu_features_t FPUFeatures = RVD ?
   // Double Precision FPU
@@ -505,7 +512,7 @@ package spatz_pkg;
     EnableVectors: 1'b1,
     EnableNanBox : 1'b1,
     //              FP32  FP64  FP16  FP8   FP16a FP8a  FP6   FP6a  FP4
-    FpFmtMask    : {1'b1, 1'b1, 1'b1, 1'b1, 1'b1, 1'b1, 1'b0, 1'b0, 1'b0},
+    FpFmtMask    : {1'b1, 1'b${fp64}, 1'b1, 1'b1, 1'b${xf16alt}, 1'b1, 1'b0, 1'b0, 1'b0},
     //              INT8  INT16 INT32 INT64
     IntFmtMask   : {1'b1, 1'b1, 1'b1, 1'b1},
     MxFpFmtMask  : 9'b0,
@@ -518,7 +525,7 @@ package spatz_pkg;
     EnableVectors: 1'b1,
     EnableNanBox : 1'b1,
     //              FP32  FP64  FP16  FP8   FP16a FP8a  FP6   FP6a  FP4
-    FpFmtMask    : {RVF,  1'b0, 1'b1, 1'b1, 1'b0, 1'b0, 1'b0, 1'b0, 1'b0},
+    FpFmtMask    : {RVF,  1'b0, 1'b1, 1'b1, 1'b${xf16alt}, 1'b0, 1'b0, 1'b0, 1'b0},
     //              INT8  INT16 INT32 INT64
     IntFmtMask   : {1'b1, 1'b1, 1'b1, 1'b0},
     MxFpFmtMask  : 9'b0,
