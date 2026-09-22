@@ -185,6 +185,18 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
     endcase
   end: div_proc
 
+  //////////////
+  //Comparator//
+  //////////////
+
+  logic greater;
+  logic equal;
+
+  always_comb begin: comparison
+    greater = $signed({op_s1_i[Width-1] & is_signed_i, op_s1_i}) > $signed({op_s2_i[Width-1] & is_signed_i, op_s2_i});
+    equal = $signed({op_s1_i[Width-1] & is_signed_i, op_s1_i}) == $signed({op_s2_i[Width-1] & is_signed_i, op_s2_i});
+  end: comparison
+
   spatz_serdiv #(
     .WIDTH  (Width),
     .IdWidth(1    )
@@ -218,8 +230,8 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
       unique case (operation_i)
         VADD, VMACC, VMADD, VADC         : simd_result = adder_result[Width-1:0];
         VSUB, VRSUB, VNMSAC, VNMSUB, VSBC: simd_result = subtractor_result[Width-1:0];
-        VMIN, VMINU                      : simd_result = $signed({op_s1_i[Width-1] & is_signed_i, op_s1_i}) <= $signed({op_s2_i[Width-1] & is_signed_i, op_s2_i}) ? op_s1_i : op_s2_i;
-        VMAX, VMAXU                      : simd_result = $signed({op_s1_i[Width-1] & is_signed_i, op_s1_i}) > $signed({op_s2_i[Width-1] & is_signed_i, op_s2_i}) ? op_s1_i : op_s2_i;
+        VMIN, VMINU                      : simd_result = (!greater) ? op_s1_i : op_s2_i;
+        VMAX, VMAXU                      : simd_result = greater ? op_s1_i : op_s2_i;
         VAND, VMAND                      : simd_result = op_s1_i & op_s2_i;
         VOR , VMOR                       : simd_result = op_s1_i | op_s2_i;
         VXOR, VMXOR                      : simd_result = op_s1_i ^ op_s2_i;
@@ -231,11 +243,11 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
         VSLL                             : simd_result = shift_operand << shift_amount;
         VSRL                             : simd_result = shift_operand >> shift_amount;
         VSRA                             : simd_result = $signed(shift_operand) >>> shift_amount;
-        VMSLT, VMSLTU                    : simd_result = Width'($signed({op_s2_i[Width-1] & is_signed_i, op_s2_i}) <  $signed({op_s1_i[Width-1] & is_signed_i, op_s1_i}));
-        VMSLE, VMSLEU                    : simd_result = Width'($signed({op_s2_i[Width-1] & is_signed_i, op_s2_i}) <= $signed({op_s1_i[Width-1] & is_signed_i, op_s1_i}));
-        VMSGT, VMSGTU                    : simd_result = Width'($signed({op_s2_i[Width-1] & is_signed_i, op_s2_i}) >  $signed({op_s1_i[Width-1] & is_signed_i, op_s1_i}));
-        VMSEQ                            : simd_result = Width'(op_s1_i == op_s2_i);
-        VMSNE                            : simd_result = Width'(op_s1_i != op_s2_i);
+        VMSLT, VMSLTU                    : simd_result = Width'(greater);
+        VMSLE, VMSLEU                    : simd_result = Width'(greater | equal);
+        VMSGT, VMSGTU                    : simd_result = Width'(!(greater | equal));
+        VMSEQ                            : simd_result = Width'(equal);
+        VMSNE                            : simd_result = Width'(!equal);
         // TODO: Change selection when SEW does not equal Width
         VMUL                             : simd_result = mult_result[Width-1:0];
         VMULH, VMULHU, VMULHSU           : begin
