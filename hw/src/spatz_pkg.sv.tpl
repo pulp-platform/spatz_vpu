@@ -160,7 +160,7 @@ package spatz_pkg;
     VFADD, VFSUB, VFMUL,
     VFMINMAX, VFSGNJ, VFCMP, VFCLASS,
     VF2I, VF2U, VI2F, VU2F, VF2F,
-    VFMADD, VFMSUB, VFNMSUB, VFNMADD, VSDOTP
+    VFMADD, VFMSUB, VFNMSUB, VFNMADD, VSDOTP, VPACE
   } op_e;
 
   // Execution units
@@ -204,6 +204,8 @@ package spatz_pkg;
 
     logic signed_vs1;
     logic signed_vs2;
+    logic is_pace_vectorial;
+    logic [2:0] pace_mode;
   } op_arith_t;
 
   typedef struct packed {
