@@ -45,6 +45,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     parameter bit                           EnableDca           = 1'b0,
     // Derived parameters. DO NOT CHANGE!
     parameter int                  unsigned NumOutstandingLoads = 8,
+    parameter type         pace_cfg_t         = logic,
+    parameter pace_cfg_t   PaceCfg            = '0,
     localparam type                         dca_req_t           = `DCA_REQ_STRUCT(N_FPU*ELEN),
     localparam type                         dca_rsp_t           = `DCA_RSP_STRUCT(N_FPU*ELEN)
   ) (
@@ -92,6 +94,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     input  logic                              fp_lsu_mem_rsp_valid_i,
     output logic                              fp_lsu_mem_rsp_ready_o,
 `endif
+    input  fpnew_pkg::pace_mode_t              pace_mode_i,
+    input  logic [cc_pkg::iomsb(PaceCfg.param_width):0] pace_param_i,
     output dreq_t                             fp_lsu_mem_req_o,
     input  drsp_t                             fp_lsu_mem_rsp_i,
     // FPU side channel
@@ -637,11 +641,15 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
 
   spatz_vfu #(
     .FPUImplementation(FPUImplementation),
-    .EnableDca        (EnableDca)
+    .EnableDca        (EnableDca),
+    .pace_cfg_t       (pace_cfg_t),
+    .PaceCfg          (PaceCfg)
   ) i_vfu (
     .clk_i            (clk_i                                                   ),
     .rst_ni           (rst_ni                                                  ),
     .hart_id_i        (hart_id_i                                               ),
+    .pace_mode_i      (pace_mode_i                                         ),
+    .pace_param_i     (pace_param_i                                            ),
     // Request
     .spatz_req_i      (spatz_req                                               ),
     .spatz_req_valid_i(spatz_req_valid                                         ),

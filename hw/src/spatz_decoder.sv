@@ -38,6 +38,14 @@ module spatz_decoder
   // New spatz request from decoded instruction
   spatz_req_t spatz_req;
 
+  logic is_vectorial_pace_instr;
+
+  assign is_vectorial_pace_instr = decoder_req_i.instr inside {
+    spatz_riscv_instr::VPACE_S,
+    spatz_riscv_instr::VPACE_H,
+    spatz_riscv_instr::VPACE_AH
+  };
+
   /////////////
   // Decoder //
   /////////////
@@ -1480,6 +1488,57 @@ module spatz_decoder
             endcase
           end else
             illegal_instr = 1'b1;
+        end
+
+        // Scalar and vector PACE instructions
+        spatz_riscv_instr::PACE_S,
+        spatz_riscv_instr::PACE_H,
+        spatz_riscv_instr::PACE_AH,
+        spatz_riscv_instr::VPACE_S,
+        spatz_riscv_instr::VPACE_H,
+        spatz_riscv_instr::VPACE_AH: begin
+          if (spatz_pkg::FPU && spatz_pkg::RVF) begin
+            spatz_req.ex_unit                    = VFU;
+            spatz_req.op                         = VPACE;
+            spatz_req.op_arith.is_scalar         = !is_vectorial_pace_instr;
+            spatz_req.op_arith.is_pace_vectorial = is_vectorial_pace_instr;
+            spatz_req.op_arith.pace_mode         = spatz_req.op_arith.is_pace_vectorial
+                                                 ? decoder_req_i.instr[27:25]
+                                                 : decoder_req_i.instr[14:12];
+
+            if (is_vectorial_pace_instr) begin
+              spatz_req.vd      = decoder_req_i.instr[11:7];
+              spatz_req.use_vd  = 1'b1;
+              spatz_req.vs1     = decoder_req_i.instr[19:15];
+              spatz_req.use_vs1 = 1'b1;
+            end else begin
+              spatz_req.rd     = decoder_req_i.instr[11:7];
+              spatz_req.use_rd = 1'b1;
+              spatz_req.rs1    = decoder_req_i.rs1;
+            end
+
+            unique casez (decoder_req_i.instr)
+              spatz_riscv_instr::PACE_S,
+              spatz_riscv_instr::VPACE_S: begin
+                spatz_req.vtype.vsew = EW_32;
+              end
+              spatz_riscv_instr::PACE_H,
+              spatz_riscv_instr::VPACE_H: begin
+                spatz_req.vtype.vsew = EW_16;
+                spatz_req.fm.src = 1'b0;
+                spatz_req.fm.dst = 1'b0;
+              end
+              spatz_riscv_instr::PACE_AH,
+              spatz_riscv_instr::VPACE_AH: begin
+                spatz_req.vtype.vsew = EW_16;
+                spatz_req.fm.src = 1'b1;
+                spatz_req.fm.dst = 1'b1;
+              end
+              default: illegal_instr = 1'b1;
+            endcase
+          end else begin
+            illegal_instr = 1'b1;
+          end
         end
 
         // Scalar single-precision floating-point instructions
