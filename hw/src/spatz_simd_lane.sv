@@ -25,6 +25,7 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
     input  vew_e  sew_i,
     // Result Output
     output data_t result_o,
+    output logic  saturated_o,
     output logic  result_valid_o,
     input  logic  result_ready_i
   );
@@ -209,8 +210,18 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
 
   // Calculate arithmetic and logics and select correct result
   always_comb begin : simd
+    automatic logic [$clog2(Width):0] ew;
     simd_result    = '0;
     result_valid_o = 1'b0;
+    saturated_o    = 1'b0;
+    // Calculate ew to find the element boarder for saturation
+    unique case (sew_i)
+      rvv_pkg::EW_8 : ew = (Width >= 8)  ? 8  : Width;
+      rvv_pkg::EW_16: ew = (Width >= 16) ? 16 : Width;
+      rvv_pkg::EW_32: ew = (Width >= 32) ? 32 : Width;
+      rvv_pkg::EW_64: ew = (Width >= 64) ? 64 : Width;
+      default       : ew = Width;
+    endcase
     if (operation_valid_i) begin
       // Valid result
       result_valid_o = 1'b1;
@@ -218,6 +229,30 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
       unique case (operation_i)
         VADD, VMACC, VMADD, VADC         : simd_result = adder_result[Width-1:0];
         VSUB, VRSUB, VNMSAC, VNMSUB, VSBC: simd_result = subtractor_result[Width-1:0];
+        VSADDU                           : begin
+          simd_result = adder_result[ew] ? '1 : adder_result[Width-1:0];
+          saturated_o = adder_result[ew];
+        end
+        VSADD                            : begin
+          // If the operands were the same sign and the signed have changed - there is overflow
+          automatic logic ovf = (arith_op1[ew-1] == arith_op2[ew-1]) && (adder_result[ew-1] != arith_op1[ew-1]);
+          // Build min value or max value based on the sign
+          automatic data_t sat = arith_op1[ew-1] ? (Width'(1) << (ew-1)) : ((Width'(1) << (ew-1)) - Width'(1));
+          simd_result = ovf ? sat : adder_result[Width-1:0];
+          saturated_o = ovf;
+        end
+        VSSUBU                           : begin
+          simd_result = subtractor_result[ew] ? '0 : subtractor_result[Width-1:0];
+          saturated_o = subtractor_result[ew];
+        end
+        VSSUB                            : begin
+          // If the operands are of different signs and result sign is not equeal to op2 sign - there is overflow 
+          automatic logic ovf = (arith_op2[ew-1] != arith_op1[ew-1]) && (subtractor_result[ew-1] != arith_op2[ew-1]);
+          // Build min and max value based on the sign
+          automatic data_t sat = arith_op2[ew-1] ? (Width'(1) << (ew-1)) : ((Width'(1) << (ew-1)) - Width'(1));
+          simd_result = ovf ? sat : subtractor_result[Width-1:0];
+          saturated_o = ovf;
+        end
         VMIN, VMINU                      : simd_result = $signed({op_s1_i[Width-1] & is_signed_i, op_s1_i}) <= $signed({op_s2_i[Width-1] & is_signed_i, op_s2_i}) ? op_s1_i : op_s2_i;
         VMAX, VMAXU                      : simd_result = $signed({op_s1_i[Width-1] & is_signed_i, op_s1_i}) > $signed({op_s2_i[Width-1] & is_signed_i, op_s2_i}) ? op_s1_i : op_s2_i;
         VAND, VMAND                      : simd_result = op_s1_i & op_s2_i;

@@ -47,6 +47,7 @@ module spatz_controller
     input  logic                                   vfu_rsp_valid_i,
     output logic                                   vfu_rsp_ready_o,
     input  vfu_rsp_t                               vfu_rsp_i,
+    input  logic                                   vfu_vxsat_i,
     // VLSU
     input  logic                                   vlsu_req_ready_i,
     input  logic                                   vlsu_rsp_valid_i,
@@ -104,6 +105,7 @@ module spatz_controller
   vlen_t   vstart_d,  vstart_q;
   vlen_t   vl_d,      vl_q;
   vtype_t  vtype_d,   vtype_q;
+  logic    vxsat_d,   vxsat_q;
 `ifdef VENTAGLIO
   logic    vtl_en_d,  vtl_en_q;     // VTL extension enable (1: VTL enabled; 0: VTL disabled)
   vid_t    VTLVreg_d, VTLVreg_q;    // Bit mask for register mapping in VTL (1: Vreg mapped to VTL)
@@ -113,6 +115,7 @@ module spatz_controller
   `FF(vstart_q,  vstart_d,  '0)
   `FF(vl_q,      vl_d,      '0)
   `FF(vtype_q,   vtype_d,   '{vill: 1'b1, vsew: EW_8, vlmul: LMUL_1, default: '0})
+  `FF(vxsat_q,   vxsat_d,   1'b0)
 `ifdef VENTAGLIO
   `FF(vtl_en_q,  vtl_en_d, 1'b0)     // VTL extension enable
   `FF(VTLVreg_q, VTLVreg_d, '0)     // VTL register setting
@@ -126,6 +129,7 @@ module spatz_controller
     vstart_d   = vstart_q;
     vl_d       = vl_q;
     vtype_d    = vtype_q;
+    vxsat_d    = vxsat_q | vfu_vxsat_i;
 `ifdef VENTAGLIO
     vtl_en_d   = vtl_en_q;   // VTL extension enable
     VTLVreg_d  = VTLVreg_q;
@@ -142,6 +146,12 @@ module spatz_controller
       if (spatz_req.op == VCSR) begin
         if (spatz_req.op_cfg.write_vstart) begin
           vstart_d = vlen_t'(spatz_req.rs1);
+        end else if (spatz_req.op_cfg.write_vxsat) begin
+          vxsat_d = spatz_req.rs1[0];
+        end else if (spatz_req.op_cfg.set_vxsat) begin
+          vxsat_d = vxsat_q | spatz_req.rs1[0] | vfu_vxsat_i;
+        end else if (spatz_req.op_cfg.clear_vxsat) begin
+          vxsat_d = vxsat_q & ~spatz_req.rs1[0];
         end else if (spatz_req.op_cfg.set_vstart) begin
           vstart_d = vstart_q | vlen_t'(spatz_req.rs1);
         end else if (spatz_req.op_cfg.clear_vstart) begin
@@ -961,7 +971,7 @@ module spatz_controller
             riscv_instr::CSR_VL    : rsp_d.data = elen_t'(vl_q);
             riscv_instr::CSR_VTYPE : rsp_d.data = elen_t'(vtype_q);
             riscv_instr::CSR_VLENB : rsp_d.data = elen_t'(VLENB);
-            riscv_instr::CSR_VXSAT : rsp_d.data = '0;
+            riscv_instr::CSR_VXSAT : rsp_d.data = elen_t'(vxsat_q);
             riscv_instr::CSR_VXRM  : rsp_d.data = '0;
             riscv_instr::CSR_VCSR  : rsp_d.data = '0;
             default: rsp_d.data                 = '0;
