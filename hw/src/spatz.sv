@@ -307,7 +307,15 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     // acc_issue_req_top.addr is unused: Spatz is the only unit on the iface.
 
     // --- Synthesized X-result for non-writeback instructions ---------------
-    combined_issue_valid = x_issue_valid_i & x_register_valid_i;
+    // Only proceed once every register this instruction might read is
+    // actually valid (Snitch's own scoreboard readiness, sent concurrently
+    // in x_register_i.rs_valid): Snitch's XIF issue does not wait for
+    // operand hazards upstream (it can't know ahead of decode whether a
+    // source register will actually be used), so without this check Spatz
+    // can consume stale/in-flight register data from an instruction still
+    // being written by a prior one (e.g. address computed right before a
+    // vector store reusing the same register).
+    combined_issue_valid = x_issue_valid_i & x_register_valid_i & (&x_register_i.rs_valid);
     // A pending synthesized result holds the next issue
     acc_issue_valid_top  = combined_issue_valid & ~synth_pend_q;
     // Gate on acc_issue_ready_top so the synthesized result only fires in the
@@ -324,8 +332,16 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     // Snitch sees the handshake in each cycle that the controller takes the
     // instruction. The handshake does not wait for x_result_ready_i, because the
     // core side can make x_result_ready_i depend on x_result_valid_o.
-    x_issue_ready_o     = acc_issue_ready_top & x_register_valid_i & ~synth_pend_q;
-    x_register_ready_o  = acc_issue_ready_top & x_issue_valid_i    & ~synth_pend_q;
+    // Must also gate ready on rs_valid, not just combined_issue_valid: Snitch
+    // reads x_issue_ready_o/x_register_ready_o to decide whether this
+    // instruction was accepted. Asserting ready while silently not feeding
+    // it to the controller (acc_issue_valid_top=0) would drop it entirely
+    // instead of leaving it re-presented (with fresher register data) next
+    // cycle.
+    x_issue_ready_o     = acc_issue_ready_top & x_register_valid_i & ~synth_pend_q
+                        & (&x_register_i.rs_valid);
+    x_register_ready_o  = acc_issue_ready_top & x_issue_valid_i    & ~synth_pend_q
+                        & (&x_register_i.rs_valid);
 
     // --- Issue response ----------------------------------------------------
     x_issue_resp_o               = '0;
