@@ -101,7 +101,7 @@ module spatz_ipu import spatz_pkg::*; import rvv_pkg::vew_e; #(
     assign sew   = sew_i;
 
     // Is the operation signed?
-    assign is_signed = operation inside {VMIN, VMAX, VMULH, VMULHSU, VDIV, VREM, VSADD, VSSUB};
+    assign is_signed = operation inside {VMIN, VMAX, VMULH, VMULHSU, VDIV, VREM, VMSGT, VMSLE, VMSLT, VSADD, VSSUB};
 
     // Is the operation signed and is this a VMULHSU?
     assign is_signed_and_not_vmulhsu = is_signed && (operation != VMULHSU);

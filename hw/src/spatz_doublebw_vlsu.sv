@@ -445,7 +445,7 @@ module spatz_doublebw_vlsu
       else
         mem_spatz_req_ready = 1'b0;
     end
-  
+
     // Did we acknowledge the end of an instruction?
     if (vlsu_rsp_valid_o) begin
       mem_insn_finished_d[vlsu_rsp_o.id] = 1'b0;

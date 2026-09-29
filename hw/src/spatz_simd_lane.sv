@@ -186,6 +186,18 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
     endcase
   end: div_proc
 
+  //////////////
+  //Comparator//
+  //////////////
+
+  logic is_greater;
+  logic is_equal;
+
+  always_comb begin: comparison
+    is_greater = $signed({op_s1_i[Width-1] & is_signed_i, op_s1_i}) > $signed({op_s2_i[Width-1] & is_signed_i, op_s2_i});
+    is_equal = $signed({op_s1_i[Width-1] & is_signed_i, op_s1_i}) == $signed({op_s2_i[Width-1] & is_signed_i, op_s2_i});
+  end: comparison
+
   spatz_serdiv #(
     .WIDTH  (Width),
     .IdWidth(1    )
@@ -253,8 +265,8 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
           simd_result = ovf ? sat : subtractor_result[Width-1:0];
           saturated_o = ovf;
         end
-        VMIN, VMINU                      : simd_result = $signed({op_s1_i[Width-1] & is_signed_i, op_s1_i}) <= $signed({op_s2_i[Width-1] & is_signed_i, op_s2_i}) ? op_s1_i : op_s2_i;
-        VMAX, VMAXU                      : simd_result = $signed({op_s1_i[Width-1] & is_signed_i, op_s1_i}) > $signed({op_s2_i[Width-1] & is_signed_i, op_s2_i}) ? op_s1_i : op_s2_i;
+        VMIN, VMINU                      : simd_result = (!is_greater) ? op_s1_i : op_s2_i;
+        VMAX, VMAXU                      : simd_result = is_greater ? op_s1_i : op_s2_i;
         VAND, VMAND                      : simd_result = op_s1_i & op_s2_i;
         VOR , VMOR                       : simd_result = op_s1_i | op_s2_i;
         VXOR, VMXOR                      : simd_result = op_s1_i ^ op_s2_i;
@@ -266,6 +278,11 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
         VSLL                             : simd_result = shift_operand << shift_amount;
         VSRL                             : simd_result = shift_operand >> shift_amount;
         VSRA                             : simd_result = $signed(shift_operand) >>> shift_amount;
+        VMSLT, VMSLTU                    : simd_result = Width'(is_greater);
+        VMSLE, VMSLEU                    : simd_result = Width'(is_greater | is_equal);
+        VMSGT, VMSGTU                    : simd_result = Width'(!(is_greater | is_equal));
+        VMSEQ                            : simd_result = Width'(is_equal);
+        VMSNE                            : simd_result = Width'(!is_equal);
         // TODO: Change selection when SEW does not equal Width
         VMUL                             : simd_result = mult_result[Width-1:0];
         VMULH, VMULHU, VMULHSU           : begin
