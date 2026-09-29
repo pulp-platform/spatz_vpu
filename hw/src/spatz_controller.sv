@@ -763,7 +763,7 @@ module spatz_controller
             spatz_req.vl     = 1;
             spatz_req.vstart = '0;
           end
-	  
+
 	        // Cap vl for mask instructions
           if (spatz_req.op inside {VMAND, VMANDNOT, VMOR, VMXOR,
                                    VMORNOT, VMNAND, VMNOR, VMXNOR}) begin

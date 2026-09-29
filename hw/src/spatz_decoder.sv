@@ -947,6 +947,9 @@ module spatz_decoder
         end
 
         // Vector floating-point instructions
+        riscv_instr::VFSQRT_V,
+        riscv_instr::VFDIV_VV,
+        riscv_instr::VFDIV_VF,
         riscv_instr::VFADD_VV,
         riscv_instr::VFADD_VF,
         riscv_instr::VFSUB_VV,
@@ -1067,6 +1070,14 @@ module spatz_decoder
             endcase
 
             unique casez (decoder_req_i.instr)
+              riscv_instr::VFDIV_VV,
+              riscv_instr::VFDIV_VF: begin
+                spatz_req.op = VFDIV;
+              end
+
+              riscv_instr::VFSQRT_V: begin
+                spatz_req.op = VFSQRT;
+              end
               riscv_instr::VFADD_VV,
               riscv_instr::VFADD_VF: spatz_req.op = VFADD;
               riscv_instr::VFSUB_VV: begin
@@ -1661,6 +1672,8 @@ module spatz_decoder
         end
 
         // Scalar half-precision floating-point instructions
+        riscv_instr::FDIV_H,
+        riscv_instr::FSQRT_H,
         riscv_instr::FADD_H,
         riscv_instr::FSUB_H,
         riscv_instr::FMUL_H,
@@ -1696,6 +1709,8 @@ module spatz_decoder
             spatz_req.vtype.vsew         = EW_16;
 
             unique casez (decoder_req_i.instr)
+              riscv_instr::FDIV_H  : spatz_req.op = VFDIV;
+              riscv_instr::FSQRT_H : spatz_req.op = VFSQRT;
               riscv_instr::FADD_H : spatz_req.op = VFADD;
               riscv_instr::FSUB_H : begin
                 spatz_req.op  = VFSUB;
@@ -1766,6 +1781,8 @@ module spatz_decoder
         end
 
         // Scalar single-precision floating-point instructions
+        riscv_instr::FDIV_S,
+        riscv_instr::FSQRT_S,
         riscv_instr::FADD_S,
         riscv_instr::FSUB_S,
         riscv_instr::FMUL_S,
@@ -1801,6 +1818,8 @@ module spatz_decoder
             spatz_req.vtype.vsew         = EW_32;
 
             unique casez (decoder_req_i.instr)
+              riscv_instr::FDIV_S  : spatz_req.op = VFDIV;
+              riscv_instr::FSQRT_S : spatz_req.op = VFSQRT;
               riscv_instr::FADD_S : spatz_req.op = VFADD;
               riscv_instr::FSUB_S : begin
                 spatz_req.op  = VFSUB;
@@ -1871,6 +1890,8 @@ module spatz_decoder
         end
 
         // Scalar double-precision floating point instructions
+        riscv_instr::FDIV_D,
+        riscv_instr::FSQRT_D,
         riscv_instr::FADD_D,
         riscv_instr::FSUB_D,
         riscv_instr::FMUL_D,
@@ -1904,6 +1925,8 @@ module spatz_decoder
             spatz_req.vtype.vsew         = EW_64;
 
             unique casez (decoder_req_i.instr)
+              riscv_instr::FDIV_D  : spatz_req.op = VFDIV;
+              riscv_instr::FSQRT_D : spatz_req.op = VFSQRT;
               riscv_instr::FADD_D : spatz_req.op = VFADD;
               riscv_instr::FSUB_D : begin
                 spatz_req.op  = VFSUB;
