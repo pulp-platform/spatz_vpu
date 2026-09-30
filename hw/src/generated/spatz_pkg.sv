@@ -118,7 +118,7 @@ package spatz_pkg;
   // Vector operations
   typedef enum logic [6:0] {
     // Arithmetic and logic instructions
-    VADD, VSUB, VADC, VSBC, VRSUB, VMINU, VMIN, VMAXU, VMAX, VAND, VOR, VXOR,
+    VADD, VSUB, VADC, VSBC, VRSUB, VMINU, VMIN, VMAXU, VMAX, VAND, VOR, VXOR, VSADD, VSADDU, VSSUB, VSSUBU,
     // Shifts,
     VSLL, VSRL, VSRA, VNSRL, VNSRA,
     // Merge and Move
@@ -177,6 +177,9 @@ package spatz_pkg;
     logic set_vstart;
     logic clear_vstart;
     logic reset_vstart;
+    logic write_vxsat;
+    logic set_vxsat;
+    logic clear_vxsat;
     // Ventaglio (VTL) CSR control flags. Decoded from the vcsr immediates
     // 0x7c3..0x7c6; consumed in the controller's proc_vcsr block.
     logic vtl_redirect;          // 0x7c3: write VTL vreg bitmap

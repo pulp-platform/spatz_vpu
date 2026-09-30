@@ -42,7 +42,8 @@ module spatz_vfu
     input  vrf_data_t  [2:0] vrf_rdata_i,
     input  logic       [2:0] vrf_rvalid_i,
     // FPU side channel
-    output status_t          fpu_status_o
+    output status_t          fpu_status_o,
+    output logic             vxsat_o
   );
 
 // Include FF
@@ -244,6 +245,7 @@ module spatz_vfu
   // Are any results valid?
   logic [N_FU*ELEN-1:0]  result;
   logic [N_FU*ELENB-1:0] result_valid;
+  logic [N_FU*ELENB-1:0]  saturated;
   logic                  result_ready;
 
   // it represents the VRF word index. Multiplication by 8 to account for LMUL
@@ -493,6 +495,7 @@ module spatz_vfu
   // IPU results
   logic [N_FU*ELEN-1:0]  ipu_result;
   logic [N_FU*ELENB-1:0] ipu_result_valid;
+  logic [N_FU*ELENB-1:0] ipu_saturated;
   logic [N_FU*ELENB-1:0] ipu_in_ready;
 
   // FPU results
@@ -660,6 +663,7 @@ module spatz_vfu
   assign in_ready     = state_q == VFU_RunningIPU ? ipu_in_ready     : fpu_in_ready;
   assign result       = state_q == VFU_RunningIPU ? ipu_result       : fpu_result_temp;
   assign result_valid = state_q == VFU_RunningIPU ? ipu_result_valid : fpu_result_valid_temp;
+  assign saturated    = (state_q == VFU_RunningIPU) ? ipu_saturated : '0;
 
   ///////////////////////
   //      DIV/SQRT     //
@@ -1555,6 +1559,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
     end
   end
   assign vrf_id_o    = {result_tag.id, {3{spatz_req.id}}};
+  assign vxsat_o = |(saturated & vreg_wbe) && vreg_we && !result_tag.reduction;
 
   //////////
   // IPUs //
@@ -1568,6 +1573,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
   logic     [N_IPU*ELEN-1:0]  int_ipu_result;
   vfu_tag_t [N_IPU-1:0]       int_ipu_result_tag;
   logic     [N_IPU*ELENB-1:0] int_ipu_result_valid;
+  logic     [N_IPU*ELENB-1:0] int_ipu_saturated;
   logic                       int_ipu_result_ready;
   logic     [N_IPU-1:0]       int_ipu_busy;
 
@@ -1617,12 +1623,14 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
   if (N_IPU < N_FU) begin: gen_pipeline_ipu
     logic [N_FU*ELEN-1:0] ipu_result_d, ipu_result_q;
     logic [N_FU*ELENB-1:0] ipu_result_valid_q, ipu_result_valid_d;
+    logic [N_FU*ELENB-1:0] ipu_saturated_q, ipu_saturated_d;
     logic [idx_width(N_FU/N_IPU)-1:0] ipu_result_pnt_d, ipu_result_pnt_q;
     vfu_tag_t ipu_result_tag_d, ipu_result_tag_q;
     logic [idx_width(N_FU/N_IPU)-1:0] ipu_operand_pnt_d, ipu_operand_pnt_q;
 
     `FF(ipu_result_q, ipu_result_d, '0)
     `FF(ipu_result_valid_q, ipu_result_valid_d, '0)
+    `FF(ipu_saturated_q, ipu_saturated_d, '0)
     `FF(ipu_result_pnt_q, ipu_result_pnt_d, '0)
     `FF(ipu_result_tag_q, ipu_result_tag_d, '0)
     `FF(ipu_operand_pnt_q, ipu_operand_pnt_d, '0)
@@ -1654,6 +1662,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       if (result_ready) begin
         ipu_result_d       = '0;
         ipu_result_valid_d = '0;
+        ipu_saturated_d    = '0;
         ipu_result_tag_d   = '0;
       end
 
@@ -1662,6 +1671,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       if (&int_ipu_result_valid) begin
         ipu_result_d[ipu_result_pnt_q*ELEN*N_IPU +: ELEN*N_IPU]         = int_ipu_result;
         ipu_result_valid_d[ipu_result_pnt_q*ELENB*N_IPU +: ELENB*N_IPU] = int_ipu_result_valid;
+        ipu_saturated_d[ipu_result_pnt_q*ELENB*N_IPU +: ELENB*N_IPU]    = int_ipu_saturated;
         ipu_result_tag_d                                                = int_ipu_result_tag[0];
         ipu_result_pnt_d                                                = ipu_result_pnt_q + 1;
         int_ipu_result_ready                                            = 1'b1;
@@ -1675,6 +1685,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
     // Forward results
     assign ipu_result       = ipu_result_q;
     assign ipu_result_valid = ipu_result_valid_q;
+    assign ipu_saturated    = ipu_saturated_q;
     assign ipu_result_tag   = ipu_result_tag_q;
   end: gen_pipeline_ipu else begin: gen_no_pipeline_ipu
     assign ipu_in_ready         = int_ipu_in_ready;
@@ -1683,6 +1694,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
     assign int_ipu_operand3     = ipu_wide_operand3;
     assign ipu_result           = int_ipu_result;
     assign ipu_result_valid     = int_ipu_result_valid;
+    assign ipu_saturated        = int_ipu_saturated;
     assign int_ipu_result_ready = result_ready;
     assign ipu_result_tag       = int_ipu_result_tag[0];
   end
@@ -1716,6 +1728,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       .result_o         (int_ipu_result[ipu*ELEN +: ELEN]                                                                ),
       .result_valid_o   (int_ipu_result_valid[ipu*ELENB +: ELENB]                                                        ),
       .result_ready_i   (int_ipu_result_ready                                                                            ),
+      .saturated_o      (int_ipu_saturated[ipu*ELENB +: ELENB]                                                           ),
       .tag_o            (int_ipu_result_tag[ipu]                                                                         ),
       .busy_o           (int_ipu_busy[ipu]                                                                               )
     );
