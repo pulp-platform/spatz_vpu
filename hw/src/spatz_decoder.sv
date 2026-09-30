@@ -41,9 +41,14 @@ module spatz_decoder
   logic is_vectorial_pace_instr;
 
   assign is_vectorial_pace_instr = decoder_req_i.instr inside {
-    spatz_riscv_instr::VPACE_S,
-    spatz_riscv_instr::VPACE_H,
-    spatz_riscv_instr::VPACE_AH
+    spatz_riscv_instr::VPACE_PWPA_S,
+    spatz_riscv_instr::VPACE_INV_S,
+    spatz_riscv_instr::VPACE_SQRT_S,
+    spatz_riscv_instr::VPACE_RSQRT_S,
+    spatz_riscv_instr::VPACE_PWPA_H,
+    spatz_riscv_instr::VPACE_INV_H,
+    spatz_riscv_instr::VPACE_SQRT_H,
+    spatz_riscv_instr::VPACE_RSQRT_H
   };
 
   /////////////
@@ -1491,12 +1496,22 @@ module spatz_decoder
         end
 
         // Scalar and vector PACE instructions
-        spatz_riscv_instr::PACE_S,
-        spatz_riscv_instr::PACE_H,
-        spatz_riscv_instr::PACE_AH,
-        spatz_riscv_instr::VPACE_S,
-        spatz_riscv_instr::VPACE_H,
-        spatz_riscv_instr::VPACE_AH: begin
+        spatz_riscv_instr::PACE_PWPA_S,
+        spatz_riscv_instr::PACE_INV_S,
+        spatz_riscv_instr::PACE_SQRT_S,
+        spatz_riscv_instr::PACE_RSQRT_S,
+        spatz_riscv_instr::PACE_PWPA_H,
+        spatz_riscv_instr::PACE_INV_H,
+        spatz_riscv_instr::PACE_SQRT_H,
+        spatz_riscv_instr::PACE_RSQRT_H,
+        spatz_riscv_instr::VPACE_PWPA_S,
+        spatz_riscv_instr::VPACE_INV_S,
+        spatz_riscv_instr::VPACE_SQRT_S,
+        spatz_riscv_instr::VPACE_RSQRT_S,
+        spatz_riscv_instr::VPACE_PWPA_H,
+        spatz_riscv_instr::VPACE_INV_H,
+        spatz_riscv_instr::VPACE_SQRT_H,
+        spatz_riscv_instr::VPACE_RSQRT_H: begin
           if (spatz_pkg::FPU && spatz_pkg::RVF) begin
             spatz_req.ex_unit                    = VFU;
             spatz_req.op                         = VPACE;
@@ -1518,21 +1533,26 @@ module spatz_decoder
             end
 
             unique casez (decoder_req_i.instr)
-              spatz_riscv_instr::PACE_S,
-              spatz_riscv_instr::VPACE_S: begin
+              spatz_riscv_instr::PACE_PWPA_S,
+              spatz_riscv_instr::PACE_INV_S,
+              spatz_riscv_instr::PACE_SQRT_S,
+              spatz_riscv_instr::PACE_RSQRT_S,
+              spatz_riscv_instr::VPACE_PWPA_S,
+              spatz_riscv_instr::VPACE_INV_S,
+              spatz_riscv_instr::VPACE_SQRT_S,
+              spatz_riscv_instr::VPACE_RSQRT_S: begin
                 spatz_req.vtype.vsew = EW_32;
               end
-              spatz_riscv_instr::PACE_H,
-              spatz_riscv_instr::VPACE_H: begin
+              spatz_riscv_instr::PACE_PWPA_H,
+              spatz_riscv_instr::PACE_INV_H,
+              spatz_riscv_instr::PACE_SQRT_H,
+              spatz_riscv_instr::PACE_RSQRT_H,
+              spatz_riscv_instr::VPACE_PWPA_H,
+              spatz_riscv_instr::VPACE_INV_H,
+              spatz_riscv_instr::VPACE_SQRT_H,
+              spatz_riscv_instr::VPACE_RSQRT_H: begin
                 spatz_req.vtype.vsew = EW_16;
-                spatz_req.fm.src = 1'b0;
-                spatz_req.fm.dst = 1'b0;
-              end
-              spatz_riscv_instr::PACE_AH,
-              spatz_riscv_instr::VPACE_AH: begin
-                spatz_req.vtype.vsew = EW_16;
-                spatz_req.fm.src = 1'b1;
-                spatz_req.fm.dst = 1'b1;
+                spatz_req.fm = fpu_fmt_mode_i;
               end
               default: illegal_instr = 1'b1;
             endcase
