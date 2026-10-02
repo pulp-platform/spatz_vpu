@@ -475,6 +475,11 @@ module spatz_vfu
             fpu_op_mode = 1'b1;
           end
 
+          VFMERGE: begin
+            fpu_op      = fpnew_pkg::SGNJ;
+            fpu_dst_fmt = fpu_src_fmt;
+          end
+
           VSDOTP: fpu_op = fpnew_pkg::SDOTP;
           VFDIV:  fpu_op = fpnew_pkg::DIV;
           VFSQRT: fpu_op = fpnew_pkg::SQRT;
@@ -645,7 +650,7 @@ module spatz_vfu
                 default: operand2 = {1*N_FU{spatz_req.rs2}};
               endcase
 
-            if (spatz_req.op == VMERGE) begin
+            if ((spatz_req.op == VMERGE) || (spatz_req.op == VFMERGE)) begin
               automatic logic [N_FU*ELEN-1:0] mmask;
               mmask = '0;
               unique case (spatz_req.vtype.vsew)
@@ -1295,7 +1300,7 @@ module spatz_vfu
       vl             : spatz_req.vl,
       vm             : spatz_req.op_arith.vm,
       vma            : spatz_req.vtype.vma,
-      is_merge       : (spatz_req.op == VMERGE),
+      is_merge       : ((spatz_req.op == VMERGE) || (spatz_req.op == VFMERGE)),
       valid_bytes    : valid_bytes_wr // count of the number of valid bytes in the VRF word (write side)
     };
 

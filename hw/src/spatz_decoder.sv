@@ -1106,6 +1106,15 @@ module spatz_decoder
                 spatz_req.rm = fpnew_pkg::RTZ;
               end
 
+              riscv_instr::VFMERGE_VFM: begin
+                spatz_req.op = VFMERGE;
+                spatz_req.rm = fpnew_pkg::RUP;
+                spatz_req.vs2 = arith_s2;
+                spatz_req.use_vs2 = 1'b1;
+                spatz_req.rs1 = decoder_req_i.rs1;
+                spatz_req.use_vs1 = 1'b0;
+              end
+
               riscv_instr::VMFEQ_VV,
               riscv_instr::VMFEQ_VF: begin
                 spatz_req.op = VFCMP;

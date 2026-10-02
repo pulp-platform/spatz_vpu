@@ -148,7 +148,7 @@ package spatz_pkg;
     VCSR,
     // Floating point instructions
     VFADD, VFDIV, VFSQRT, VFSUB, VFMUL,
-    VFMINMAX, VFSGNJ, VFCMP, VFCLASS,
+    VFMINMAX, VFSGNJ, VFMERGE, VFCMP, VFCLASS,
     VF2I, VF2U, VI2F, VU2F, VF2F,
     VFMADD, VFMSUB, VFNMSUB, VFNMADD, VSDOTP,
     // Ventaglio indexed fused-multiply ops (vfxmacc.vrf / vfxmul.vrf)
