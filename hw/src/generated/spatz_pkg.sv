@@ -121,8 +121,8 @@ package spatz_pkg;
     VADD, VSUB, VADC, VSBC, VRSUB, VMINU, VMIN, VMAXU, VMAX, VAND, VOR, VXOR,
     // Shifts,
     VSLL, VSRL, VSRA, VNSRL, VNSRA,
-    // Merge and Move
-    VMERGE, VMV,
+    // Merge, Move, Compress
+    VMERGE, VMV, VCOMPRESS,
     // Mul/Mul-Add
     VMUL, VMULH, VMULHU, VMULHSU, VMACC, VNMSAC, VMADD, VNMSUB,
     // Div

@@ -404,6 +404,7 @@ module spatz_decoder
         riscv_instr::VMERGE_VXM,
         riscv_instr::VMERGE_VIM,
         riscv_instr::VMV_V_V,
+        riscv_instr::VCOMPRESS_VM,
         riscv_instr::VMV_V_X,
         riscv_instr::VMV_V_I,
         riscv_instr::VMV_S_X,
@@ -857,6 +858,11 @@ module spatz_decoder
               spatz_req.vs2                = spatz_req.vs1;
               spatz_req.use_vs2            = (func3 == OPIVV);
               spatz_req.op_arith.is_scalar = decoder_req_i.instr inside {riscv_instr::VMV_S_X};
+            end
+
+            riscv_instr::VCOMPRESS_VM: begin
+              spatz_req.op = VCOMPRESS;
+              spatz_req.ex_unit = SLD;
             end
 
             // Vector Slide
