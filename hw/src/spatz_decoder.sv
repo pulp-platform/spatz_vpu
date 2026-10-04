@@ -959,6 +959,7 @@ module spatz_decoder
         riscv_instr::VFMIN_VF,
         riscv_instr::VFMAX_VV,
         riscv_instr::VFMAX_VF,
+        riscv_instr::VFMERGE_VFM,
         riscv_instr::VMFEQ_VV,
         riscv_instr::VMFEQ_VF,
         riscv_instr::VMFNE_VV,
