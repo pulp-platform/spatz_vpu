@@ -1049,7 +1049,8 @@ module spatz_doublebw_vlsu
 `endif
           if (!rob_full[intf][fu] && !offset_queue_full[intf][fu] && mem_operation_valid[intf][fu]) begin
             rob_req_id[intf][fu]     = spatz_mem_req_ready[intf][fu] & spatz_mem_req_valid[intf][fu];
-            mem_req_lvalid[intf][fu] = (!mem_is_indexed || (vrf_rvalid_i[intf][1] & !fetch_next_idx[intf][fu])) && mem_spatz_req.op_mem.is_load;
+            // Hold loads until RunningLoad: rob_push drops a response that returns while still in RunningStore
+            mem_req_lvalid[intf][fu] = (!mem_is_indexed || (vrf_rvalid_i[intf][1] & !fetch_next_idx[intf][fu])) && mem_spatz_req.op_mem.is_load && state_q == VLSU_RunningLoad;
             mem_req_id[intf][fu]     = rob_id[intf][fu];
             mem_req_last[intf][fu]   = mem_operation_last[intf][fu];
           end
