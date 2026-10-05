@@ -286,6 +286,16 @@ module spatz_decoder
         riscv_instr::VWSUB_VX,
         riscv_instr::VWSUBU_VV,
         riscv_instr::VWSUBU_VX,
+        riscv_instr::VSADD_VV,
+        riscv_instr::VSADD_VX,
+        riscv_instr::VSADD_VI,
+        riscv_instr::VSADDU_VV,
+        riscv_instr::VSADDU_VX,
+        riscv_instr::VSADDU_VI,
+        riscv_instr::VSSUB_VV,
+        riscv_instr::VSSUB_VX,
+        riscv_instr::VSSUBU_VV,
+        riscv_instr::VSSUBU_VX,
         riscv_instr::VAND_VV,
         riscv_instr::VAND_VX,
         riscv_instr::VAND_VI,
@@ -494,6 +504,28 @@ module spatz_decoder
               spatz_req.op                 = VSUB;
               spatz_req.op_arith.widen_vs1 = 1'b1;
               spatz_req.op_arith.widen_vs2 = 1'b1;
+            end
+
+            riscv_instr::VSADD_VV,
+            riscv_instr::VSADD_VX,
+            riscv_instr::VSADD_VI: begin
+              spatz_req.op = VSADD;
+            end
+
+            riscv_instr::VSADDU_VV,
+            riscv_instr::VSADDU_VX,
+            riscv_instr::VSADDU_VI: begin
+              spatz_req.op = VSADDU;
+            end
+
+            riscv_instr::VSSUB_VV,
+            riscv_instr::VSSUB_VX: begin
+              spatz_req.op = VSSUB;
+            end
+
+            riscv_instr::VSSUBU_VV,
+            riscv_instr::VSSUBU_VX: begin
+              spatz_req.op = VSSUBU;
             end
 
             // Vector Logic
@@ -2065,17 +2097,27 @@ module spatz_decoder
                 spatz_req.op_cfg.set_vtl_ratio = 1'b1;
               end
 
+              if (csr_addr == riscv_instr::CSR_VXSAT) begin
+                spatz_req.use_rd             = csr_rd != '0;
+                spatz_req.op_cfg.write_vxsat = 1'b1;
+              end
             end
 
             riscv_instr::CSRRS,
-            riscv_instr::CSRRSI:
+            riscv_instr::CSRRSI: begin
               if (csr_addr == riscv_instr::CSR_VSTART)
                 spatz_req.op_cfg.set_vstart = csr_rs1 != '0;
+              if (csr_addr == riscv_instr::CSR_VXSAT)
+                spatz_req.op_cfg.set_vxsat = csr_rs1 != '0;
+            end
 
             riscv_instr::CSRRC,
-            riscv_instr::CSRRCI:
+            riscv_instr::CSRRCI: begin
               if (csr_addr == riscv_instr::CSR_VSTART)
                 spatz_req.op_cfg.clear_vstart = csr_rs1 != '0;
+              if (csr_addr == riscv_instr::CSR_VXSAT)
+                spatz_req.op_cfg.clear_vxsat = csr_rs1 != '0;
+            end
 
             default:
               illegal_instr = 1'b1;
