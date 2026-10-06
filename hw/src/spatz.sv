@@ -45,6 +45,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     parameter bit                           EnableDca           = 1'b0,
     // Derived parameters. DO NOT CHANGE!
     parameter int                  unsigned NumOutstandingLoads = 8,
+    parameter type                          pace_cfg_t           = logic,
+    parameter pace_cfg_t                    PaceCfg              = '0,
     localparam type                         dca_req_t           = `DCA_REQ_STRUCT(N_FPU*ELEN),
     localparam type                         dca_rsp_t           = `DCA_RSP_STRUCT(N_FPU*ELEN)
   ) (
@@ -92,12 +94,15 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     input  logic                              fp_lsu_mem_rsp_valid_i,
     output logic                              fp_lsu_mem_rsp_ready_o,
 `endif
+    // PACE parameter interface.  The cluster owns and fills the parameter
+    // memory; Spatz only consumes the selected parameter vector.
+    input  fpnew_pkg::pace_mode_t            pace_mode_i,
+    input  logic [cc_pkg::iomsb(PaceCfg.param_width):0] pace_param_i,
     output dreq_t                             fp_lsu_mem_req_o,
     input  drsp_t                             fp_lsu_mem_rsp_i,
     // FPU side channel
     input  roundmode_e                        fpu_rnd_mode_i,
     input  fmt_mode_t                         fpu_fmt_mode_i,
-    input  pace_mode_t                        fpu_pace_mode_i,
     output status_t                           fpu_status_o,
     // Direct Compute Access (DCA) interface
     input  dca_req_t                          dca_req_i,
@@ -459,48 +464,13 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
   logic                         vrf_vtl_rgather_en;
 `endif
 
-  // PACE parameter memory
-`ifdef PACE
-  // With DOUBLE_BW both VLSU write ports carry consecutive 256-bit chunks each cycle,
-  // so we must capture both to reconstruct the contiguous parameter stream.
-  // Use WD0-only for pace_mem: each beat captures 256 bits from WD0 (lower addresses).
-  // This avoids requiring simultaneous WD0+WD1 grants, which is unreliable in DOUBLE_BW.
-  localparam int unsigned PaceBufWidth = N_FU * ELEN;
-`ifdef DOUBLE_BW
-  localparam int unsigned PaceLdIdx    = VLSU_VD_WD0;
-`else
-  localparam int unsigned PaceLdIdx    = VLSU_VD_WD;
-`endif
-  localparam int unsigned PaceBufDepth = (PaceParamWidth + PaceBufWidth - 1) / PaceBufWidth;
-  logic                   pace_mem_we;
-  logic [PaceParamWidth-1:0] pace_params;
-  logic                   pace_mem_init_done;
-
-`ifdef DOUBLE_BW
-  assign pace_mem_we = fpu_pace_mode_i.enable & vrf_we[VLSU_VD_WD0] & (~pace_mem_init_done);
-`else
-  assign pace_mem_we = fpu_pace_mode_i.enable & vrf_we[PaceLdIdx] & (~pace_mem_init_done);
-`endif
-
-  always_comb begin
-    vrf_we_mask = vrf_we;
-    vrf_wvalid  = vrf_wvalid_mask;
-    vrf_we_mask[PaceLdIdx] = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? 1'b0 : vrf_we[PaceLdIdx];
-    vrf_wvalid[PaceLdIdx]  = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? vrf_we[PaceLdIdx] : vrf_wvalid_mask[PaceLdIdx];
-`ifdef DOUBLE_BW
-    vrf_we_mask[VLSU_VD_WD1] = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? 1'b0 : vrf_we[VLSU_VD_WD1];
-    vrf_wvalid[VLSU_VD_WD1]  = fpu_pace_mode_i.enable & (~pace_mem_init_done) ? vrf_we[VLSU_VD_WD1] : vrf_wvalid_mask[VLSU_VD_WD1];
-`endif
-  end
-`else
-  // PACE disabled: no pace_mem, VRF writes pass straight through unmasked.
+  // PACE parameters are no longer loaded through a VLSU/VRF side channel.
+  // Preserve the ordinary VRF write path, including any compiled doubleBW
+  // support, while the cluster-side AXI PACE memory supplies pace_param_i.
   always_comb begin
     vrf_we_mask = vrf_we;
     vrf_wvalid  = vrf_wvalid_mask;
   end
-  logic [PaceParamWidth-1:0] pace_params;
-  assign pace_params = '0;
-`endif
 
   spatz_vrf #(
     .NrReadPorts (NrReadPorts ),
@@ -543,26 +513,6 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     .rgather_en_o   (vrf_vtl_rgather_en)
 `endif
   );
-
-`ifdef PACE
-  pace_mem #(
-    .BufDepth  (PaceBufDepth ),
-    .BufWidth  (PaceBufWidth ),
-    .ParamWidth(PaceParamWidth)
-  ) i_pace_mem (
-    .clk_i  (clk_i                  ),
-    .rst_ni (rst_ni                 ),
-    .we_i   (pace_mem_we            ),
-    .done_o (pace_mem_init_done     ),
-    .init_i (fpu_pace_mode_i.enable ),
-`ifdef DOUBLE_BW
-    .data_i (vrf_wdata_buf[VLSU_VD_WD0]),
-`else
-    .data_i (vrf_wdata_buf[PaceLdIdx]),
-`endif
-    .data_o (pace_params            )
-  );
-`endif
 
   ////////////////
   // Controller //
@@ -785,7 +735,9 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
 
   spatz_vfu #(
     .FPUImplementation(FPUImplementation),
-    .EnableDca        (EnableDca)
+    .EnableDca        (EnableDca),
+    .pace_cfg_t       (pace_cfg_t),
+    .PaceCfg          (PaceCfg)
   ) i_vfu (
     .clk_i            (clk_i                                                   ),
     .rst_ni           (rst_ni                                                  ),
@@ -817,8 +769,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     .vrf_rvalid_i     (vrf_rvalid[VFU_VD_RD:VFU_VS2_RD]                        ),
     .vrf_id_o         ({sb_id[SB_VFU_VD_WD], sb_id[SB_VFU_VD_RD:SB_VFU_VS2_RD]}),
     // FPU side-channel
-    .pace_mode_i      (fpu_pace_mode_i                                         ),
-    .pace_param_i     (pace_params                                             ),
+    .pace_mode_i      (pace_mode_i                                             ),
+    .pace_param_i     (pace_param_i                                            ),
     .fpu_status_o     (fpu_status_o                                            ),
     // DCA
     .dca_req_i        (dca_req_i                                               ),

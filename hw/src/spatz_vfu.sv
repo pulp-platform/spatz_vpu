@@ -21,14 +21,17 @@ module spatz_vfu
     parameter fpu_implementation_t FPUImplementation = fpu_implementation_t'(0),
     /// Enable external Direct Compute Access requests into the FPU lanes.
     parameter bit EnableDca = 1'b0,
+    parameter type pace_cfg_t = logic,
+    parameter pace_cfg_t PaceCfg = '0,
     // Derived parameters. DO NOT CHANGE!
-    localparam type                pace_param_t       = logic [PaceParamWidth-1:0],
     localparam type dca_req_t = `DCA_REQ_STRUCT(N_FPU*ELEN),
     localparam type dca_rsp_t = `DCA_RSP_STRUCT(N_FPU*ELEN)
   ) (
     input  logic             clk_i,
     input  logic             rst_ni,
     input  logic [31:0]      hart_id_i,
+    input  fpnew_pkg::pace_mode_t pace_mode_i,
+    input  logic [cc_pkg::iomsb(PaceCfg.param_width):0] pace_param_i,
     // Spatz req
     input  spatz_req_t       spatz_req_i,
     input  logic             spatz_req_valid_i,
@@ -51,9 +54,6 @@ module spatz_vfu
     output logic       [2:0] vrf_re_o,
     input  vrf_data_t  [2:0] vrf_rdata_i,
     input  logic       [2:0] vrf_rvalid_i,
-    // FPU side channel
-    input  pace_param_t      pace_param_i,
-    input  pace_mode_t       pace_mode_i,
     output status_t          fpu_status_o,
     // Direct Compute Access (DCA) interface
     input  dca_req_t         dca_req_i,
@@ -184,7 +184,7 @@ module spatz_vfu
 
   // Is this a FPU instruction
   logic is_fpu_insn;
-  assign is_fpu_insn = FPU && spatz_req.op inside {[VFADD:VSDOTP]};
+  assign is_fpu_insn = FPU && spatz_req.op inside {[VFADD:VPACE]};
 
   // Is the FPU busy?
   logic is_fpu_busy;
@@ -347,6 +347,31 @@ module spatz_vfu
   int_format_e fpu_int_fmt;
   logic fpu_op_mode;
   logic fpu_vectorial_op;
+  fpnew_pkg::pace_mode_t fpu_pace_mode;
+
+  // Keep the branch's complete FP-format support, but derive PACE features
+  // from the cluster configuration and restrict them to formats supported by
+  // this VPU instance.
+  localparam fpnew_pkg::fmt_logic_t PaceFmtMask =
+    fpnew_pkg::fmt_logic_t'(PaceCfg.fmt_config) & FPUFeatures.FpFmtMask;
+  localparam fpnew_pkg::fpu_features_t FPUFeaturesWithPace = '{
+    Width:         FPUFeatures.Width,
+    EnableVectors: FPUFeatures.EnableVectors,
+    EnableNanBox:  FPUFeatures.EnableNanBox,
+    FpFmtMask:     FPUFeatures.FpFmtMask,
+    IntFmtMask:    FPUFeatures.IntFmtMask,
+    MxFpFmtMask:   FPUFeatures.MxFpFmtMask,
+    MxIntFmtMask:  FPUFeatures.MxIntFmtMask,
+    PaceFeatures:  '{
+      PaceDegree:      PaceCfg.degree,
+      PaceParts:       PaceCfg.parts,
+      PaceEps:         PaceCfg.eps,
+      PaceDataWidth:   PaceCfg.data_width,
+      PaceParamWidth:  PaceCfg.param_width,
+      PaceBstPipeRegs: fpnew_pkg::pace_pipe_t'(PaceCfg.pipe_dist),
+      FmtConfig:       PaceFmtMask
+    }
+  };
 
   logic [N_FPU-1:0] fpu_busy_d, fpu_busy_q;
   `FF(fpu_busy_q, fpu_busy_d, '0)
@@ -358,6 +383,8 @@ module spatz_vfu
       fpu_op           = fpnew_pkg::FMADD;
       fpu_op_mode      = 1'b0;
       fpu_vectorial_op = 1'b0;
+      fpu_pace_mode    = '0;
+      fpu_pace_mode.degree = pace_mode_i.degree;
       is_fpu_busy      = |fpu_busy_q;
       fpu_src_fmt      = fpnew_pkg::FP32;
       fpu_dst_fmt      = fpnew_pkg::FP32;
@@ -407,9 +434,7 @@ module spatz_vfu
             fpu_op      = fpnew_pkg::ADD;
             fpu_op_mode = 1'b1;
           end
-          // Use PWPA (piecewise polynomial approximation) when PACE is enabled;
-          // otherwise regular FP multiply.
-          VFMUL  : fpu_op = pace_mode_i.enable ? fpnew_pkg::PWPA : fpnew_pkg::MUL;
+          VFMUL  : fpu_op = fpnew_pkg::MUL;
           VFMADD : fpu_op = fpnew_pkg::FMADD;
           VFMSUB : begin
             fpu_op      = fpnew_pkg::FMADD;
@@ -456,6 +481,17 @@ module spatz_vfu
           end
 
           VSDOTP: fpu_op = fpnew_pkg::SDOTP;
+          VPACE: begin
+            unique case (spatz_req.op_arith.pace_mode[1:0])
+              2'b01: fpu_op = fpnew_pkg::PACE_INV;
+              2'b10: fpu_op = fpnew_pkg::PACE_SQRT;
+              2'b11: fpu_op = fpnew_pkg::PACE_RSQRT;
+              default: fpu_op = fpnew_pkg::PWPA;
+            endcase
+            fpu_vectorial_op = spatz_req.op_arith.is_pace_vectorial;
+            fpu_pace_mode.enable = 1'b1;
+            fpu_pace_mode.extend = spatz_req.op_arith.pace_mode[2];
+          end
 
           default:;
         endcase
@@ -1635,8 +1671,10 @@ assign vfcmp_result_accepted = (spatz_req.op == VFCMP) && &(result_valid | ~pend
 
       elen_t fpu_operand1, fpu_operand2, fpu_operand3;
       assign fpu_operand1 = spatz_req.op_arith.switch_rs1_rd ? wide_operand3[fpu*ELEN +: ELEN] : wide_operand1[fpu*ELEN +: ELEN];
-      assign fpu_operand2 = wide_operand2[fpu*ELEN +: ELEN];
-      assign fpu_operand3 = (fpu_op == fpnew_pkg::ADD || spatz_req.op_arith.switch_rs1_rd) ? wide_operand1[fpu*ELEN +: ELEN] : wide_operand3[fpu*ELEN +: ELEN];
+      assign fpu_operand2 = spatz_req.op == VPACE ? fpu_operand1 : wide_operand2[fpu*ELEN +: ELEN];
+      assign fpu_operand3 = spatz_req.op == VPACE ? '0 :
+                            (fpu_op == fpnew_pkg::ADD || spatz_req.op_arith.switch_rs1_rd) ? wide_operand1[fpu*ELEN +: ELEN] :
+                                                                                               wide_operand3[fpu*ELEN +: ELEN];
 
       fpu_req_t spatz_fpu_req, dca_fpu_req, muxed_fpu_req;
       fpu_rsp_t spatz_fpu_rsp, dca_fpu_rsp, muxed_fpu_rsp;
@@ -1644,7 +1682,9 @@ assign vfcmp_result_accepted = (spatz_req.op == VFCMP) && &(result_valid | ~pend
       // Pack Spatz' FPU request
       assign spatz_fpu_req.q_valid        = spatz_req_valid && operands_ready && (!spatz_req.op_arith.is_scalar || fpu == 0) && is_fpu_insn;
       assign spatz_fpu_req.p_ready        = result_ready;
-      assign spatz_fpu_req.q.operands     = {fpu_operand3, fpu_operand2, fpu_operand1};
+      assign spatz_fpu_req.q.operands     = spatz_fpu_req.q_valid
+                                           ? {fpu_operand3, fpu_operand2, fpu_operand1}
+                                           : '0;
       assign spatz_fpu_req.q.rnd_mode     = spatz_req.rm;
       assign spatz_fpu_req.q.op           = fpu_op;
       assign spatz_fpu_req.q.op_mod       = fpu_op_mode;
@@ -1700,6 +1740,7 @@ assign vfcmp_result_accepted = (spatz_req.op == VFCMP) && &(result_valid | ~pend
 
       // Cut the FPU request channel
       fpu_req_chan_t fpu_req_q;
+      fpnew_pkg::pace_mode_t fpu_pace_mode_q;
       logic fpu_in_valid_q;
       logic fpu_in_ready_d;
 
@@ -1714,13 +1755,14 @@ assign vfcmp_result_accepted = (spatz_req.op == VFCMP) && &(result_valid | ~pend
         vectorial_op: 1'b0,
         tag:          '{vsew: EW_8, default: '0}
       })
+      `FFL(fpu_pace_mode_q, fpu_pace_mode, muxed_fpu_req.q_valid && muxed_fpu_rsp.q_ready, '0)
       `FFL(fpu_in_valid_q, muxed_fpu_req.q_valid, muxed_fpu_rsp.q_ready, 1'b0)
 
       assign muxed_fpu_rsp.q_ready  = !fpu_in_valid_q || fpu_in_valid_q && fpu_in_ready_d;
 
       // Instantiate the FPU
       fpnew_top #(
-        .Features                   (FPUFeatures),
+        .Features                   (FPUFeaturesWithPace),
         .Implementation             (FPUImplementation),
         .TagType                    (vfu_tag_t),
         .StochasticRndImplementation(fpnew_pkg::DEFAULT_RSR)
@@ -1732,7 +1774,7 @@ assign vfcmp_result_accepted = (spatz_req.op == VFCMP) && &(result_valid | ~pend
         .busy_o        (fpu_busy_d[fpu]),
         .operands_i    ({fpu_req_q.operands[2], fpu_req_q.operands[1], fpu_req_q.operands[0]}),
         .pace_param_i  (pace_param_i),
-        .pace_mode_i   (pace_mode_i),
+        .pace_mode_i   (fpu_pace_mode_q),
         // Only the FPU0 executes scalar instructions
         .in_valid_i    (fpu_in_valid_q),
         .in_ready_o    (fpu_in_ready_d),

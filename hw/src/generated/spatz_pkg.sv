@@ -63,7 +63,7 @@ package spatz_pkg;
   localparam int unsigned NrWordsPerBank   = NrVRFWords / NrVRFBanks;
 
   // Number of VLSU interfaces
-  localparam int unsigned NumVLSUInterfaces = 2;
+  localparam int unsigned NumVLSUInterfaces = 1;
 
   // Width of scalar register file adresses
   // Depends on whether we have a FP regfile or not
@@ -84,11 +84,14 @@ package spatz_pkg;
 
   // Encodes both the scalar RD and the VD address in the VRF
   localparam int VFURespAddrWidth  = GPRWidth > $clog2(NrVRFWords) ? GPRWidth : $clog2(NrVRFWords);
-  localparam int PaceDegree        = 2;
-  localparam int PaceParts         = 16;
-  localparam int PaceEps           = 1;
-  localparam int PaceDataWidth     = 32;
-  localparam int PaceParamWidth    = ((PaceDegree + 1)*PaceParts + PaceParts - 1 + 2*PaceEps) * PaceDataWidth;
+  // PACE disabled: keep the FPU's PACE datapath (fpnew_pace_fma_multi) from being
+  // synthesized at all -- EnablePace in fpnew_opgroup_multifmt_slice.sv is gated on
+  // PaceFeatures.FmtConfig being nonzero, so a zeroed struct below removes it.
+  localparam int PaceDegree        = 0;
+  localparam int PaceParts         = 0;
+  localparam int PaceEps           = 0;
+  localparam int PaceDataWidth     = 0;
+  localparam int PaceParamWidth    = 1; // avoid a zero-width pace_params/pace_param_i signal
 
   //////////////////////
   // Type Definitions //
@@ -155,7 +158,7 @@ package spatz_pkg;
     VFADD, VFSUB, VFMUL,
     VFMINMAX, VFSGNJ, VFCMP, VFCLASS,
     VF2I, VF2U, VI2F, VU2F, VF2F,
-    VFMADD, VFMSUB, VFNMSUB, VFNMADD, VSDOTP,
+    VFMADD, VFMSUB, VFNMSUB, VFNMADD, VSDOTP, VPACE,
     // Ventaglio indexed fused-multiply ops (vfxmacc.vrf / vfxmul.vrf)
     VFXMADD
   } op_e;
@@ -207,6 +210,8 @@ package spatz_pkg;
 
     logic signed_vs1;
     logic signed_vs2;
+    logic is_pace_vectorial;
+    logic [2:0] pace_mode;
   } op_arith_t;
 
   typedef struct packed {
@@ -374,34 +379,30 @@ package spatz_pkg;
   // VRF/SB Ports //
   //////////////////
 
-  typedef enum logic [idx_width(4 + 2 * 2):0] {
+  typedef enum logic [idx_width(4 + 2 * 1):0] {
     VFU_VS2_RD,
     VFU_VS1_RD,
     VFU_VD_RD,
-    VLSU_VD_RD0,
-    VLSU_VS2_RD0,
-    VLSU_VD_RD1,
-    VLSU_VS2_RD1,
+    VLSU_VS2_RD,
+    VLSU_VD_RD,
     VSLDU_VS2_RD
   } vreg_port_rd_e;
 
-  typedef enum logic [idx_width(2 + 2):0] {
+  typedef enum logic [idx_width(2 + 1):0] {
     VFU_VD_WD,
-    VLSU_VD_WD[2],
+    VLSU_VD_WD,
     VSLDU_VD_WD
   } vreg_port_wd_e;
 
-  typedef enum logic [idx_width(6 + 3 * 2):0] {
+  typedef enum logic [idx_width(6 + 3 * 1):0] {
     SB_VFU_VS2_RD,
     SB_VFU_VS1_RD,
     SB_VFU_VD_RD,
-    SB_VLSU_VD_RD0,
-    SB_VLSU_VS2_RD0,
-    SB_VLSU_VD_RD1,
-    SB_VLSU_VS2_RD1,
+    SB_VLSU_VS2_RD,
+    SB_VLSU_VD_RD,
     SB_VSLDU_VS2_RD,
     SB_VFU_VD_WD,
-    SB_VLSU_VD_WD[2],
+    SB_VLSU_VD_WD,
     SB_VSLDU_VD_WD
   } sb_port_e;
 
@@ -421,12 +422,12 @@ package spatz_pkg;
     EnableVectors: 1'b1,
     EnableNanBox : 1'b1,
     //              FP32  FP64  FP16  FP8   FP16a FP8a  FP6   FP6a  FP4
-    FpFmtMask    : {1'b1, 1'b1, 1'b1, 1'b1, 1'b1, 1'b1, 1'b0, 1'b0, 1'b0},
+    FpFmtMask    : {1'b1, 1'b1, 1'b1, 1'b1, 1'b0, 1'b1, 1'b0, 1'b0, 1'b0},
     //              INT8  INT16 INT32 INT64
     IntFmtMask   : {1'b1, 1'b1, 1'b1, 1'b1},
     MxFpFmtMask  : 9'b0,
     MxIntFmtMask : 4'b0,
-    PaceFeatures : '{PaceDegree: PaceDegree, PaceParts: PaceParts, PaceEps: 1'b1, PaceDataWidth: PaceDataWidth, PaceParamWidth: PaceParamWidth, PaceBstPipeRegs: 4'b0100, FmtConfig: 9'b101010000}
+    PaceFeatures : '{default: 0}
   } :
   // Single Precision FPU
   '{
@@ -439,7 +440,7 @@ package spatz_pkg;
     IntFmtMask   : {1'b1, 1'b1, 1'b1, 1'b0},
     MxFpFmtMask  : 9'b0,
     MxIntFmtMask : 4'b0,
-    PaceFeatures : '{PaceDegree: PaceDegree, PaceParts: PaceParts, PaceEps: 1'b1, PaceDataWidth: PaceDataWidth, PaceParamWidth: PaceParamWidth, PaceBstPipeRegs: 4'b0100, FmtConfig: 9'b101010000}
+    PaceFeatures : '{default: 0}
   };
 
   // FP format conversion

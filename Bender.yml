@@ -35,7 +35,6 @@ sources:
     # Level 2
     - hw/src/spatz_decoder.sv
     - hw/src/spatz_simd_lane.sv
-    - hw/src/pace_mem.sv
     - target: fpga
       files:
         - hw/src/vregfile_fpga.sv

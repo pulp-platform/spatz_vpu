@@ -1485,6 +1485,69 @@ module spatz_decoder
         end
 `endif // VENTAGLIO
 
+        // Scalar and vector PACE instructions. These use explicit encodings
+        // rather than overloading VFMUL, and receive their coefficients from
+        // the cluster PACE parameter memory.
+        spatz_riscv_instr::PACE_PWPA_S,
+        spatz_riscv_instr::PACE_INV_S,
+        spatz_riscv_instr::PACE_SQRT_S,
+        spatz_riscv_instr::PACE_RSQRT_S,
+        spatz_riscv_instr::PACE_PWPA_H,
+        spatz_riscv_instr::PACE_INV_H,
+        spatz_riscv_instr::PACE_SQRT_H,
+        spatz_riscv_instr::PACE_RSQRT_H,
+        spatz_riscv_instr::VPACE_PWPA_S,
+        spatz_riscv_instr::VPACE_INV_S,
+        spatz_riscv_instr::VPACE_SQRT_S,
+        spatz_riscv_instr::VPACE_RSQRT_S,
+        spatz_riscv_instr::VPACE_PWPA_H,
+        spatz_riscv_instr::VPACE_INV_H,
+        spatz_riscv_instr::VPACE_SQRT_H,
+        spatz_riscv_instr::VPACE_RSQRT_H: begin
+          automatic logic is_vectorial_pace_instr;
+          is_vectorial_pace_instr = decoder_req_i.instr inside {
+            spatz_riscv_instr::VPACE_PWPA_S, spatz_riscv_instr::VPACE_INV_S,
+            spatz_riscv_instr::VPACE_SQRT_S, spatz_riscv_instr::VPACE_RSQRT_S,
+            spatz_riscv_instr::VPACE_PWPA_H, spatz_riscv_instr::VPACE_INV_H,
+            spatz_riscv_instr::VPACE_SQRT_H, spatz_riscv_instr::VPACE_RSQRT_H
+          };
+          if (spatz_pkg::FPU && spatz_pkg::RVF) begin
+            spatz_req.ex_unit                    = VFU;
+            spatz_req.op                         = VPACE;
+            spatz_req.op_arith.is_scalar         = !is_vectorial_pace_instr;
+            spatz_req.op_arith.is_pace_vectorial = is_vectorial_pace_instr;
+            // PACE encodes its operation in bits [27:25], including the
+            // usual vector mask bit. Its instructions are always unmasked.
+            spatz_req.op_arith.vm                 = 1'b1;
+            spatz_req.op_arith.pace_mode         = is_vectorial_pace_instr
+                                                 ? decoder_req_i.instr[27:25]
+                                                 : decoder_req_i.instr[14:12];
+            if (is_vectorial_pace_instr) begin
+              spatz_req.vd      = decoder_req_i.instr[11:7];
+              spatz_req.use_vd  = 1'b1;
+              spatz_req.vs1     = decoder_req_i.instr[19:15];
+              spatz_req.use_vs1 = 1'b1;
+            end else begin
+              spatz_req.rd     = decoder_req_i.instr[11:7];
+              spatz_req.use_rd = 1'b1;
+              spatz_req.rs1    = decoder_req_i.rs1;
+            end
+            unique casez (decoder_req_i.instr)
+              spatz_riscv_instr::PACE_PWPA_S, spatz_riscv_instr::PACE_INV_S,
+              spatz_riscv_instr::PACE_SQRT_S, spatz_riscv_instr::PACE_RSQRT_S,
+              spatz_riscv_instr::VPACE_PWPA_S, spatz_riscv_instr::VPACE_INV_S,
+              spatz_riscv_instr::VPACE_SQRT_S, spatz_riscv_instr::VPACE_RSQRT_S:
+                spatz_req.vtype.vsew = EW_32;
+              default: begin
+                spatz_req.vtype.vsew = EW_16;
+                spatz_req.fm = fpu_fmt_mode_i;
+              end
+            endcase
+          end else begin
+            illegal_instr = 1'b1;
+          end
+        end
+
         // Move to the scalar FP RF
         spatz_riscv_instr::VFMV_F_S: begin
           if (spatz_pkg::FPU) begin

@@ -12,6 +12,6 @@
     spatz_nports: 8
     double_bw: false
     buf_fpu: 1
+    pace: true
   }
 }
-

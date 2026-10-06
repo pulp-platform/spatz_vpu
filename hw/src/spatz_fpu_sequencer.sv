@@ -508,6 +508,37 @@ module spatz_fpu_sequencer
           end
         end
 
+        // Scalar PACE operations read and write the scalar FP register file.
+        spatz_riscv_instr::PACE_PWPA_S,
+        spatz_riscv_instr::PACE_INV_S,
+        spatz_riscv_instr::PACE_SQRT_S,
+        spatz_riscv_instr::PACE_RSQRT_S,
+        spatz_riscv_instr::PACE_PWPA_H,
+        spatz_riscv_instr::PACE_INV_H,
+        spatz_riscv_instr::PACE_SQRT_H,
+        spatz_riscv_instr::PACE_RSQRT_H: begin
+          if (RVF) begin
+            use_fs1 = 1'b1;
+            use_fd  = 1'b1;
+          end else begin
+            illegal_inst = 1'b1;
+          end
+        end
+
+        // Vector PACE operations use the VRF in the Spatz VFU.
+        spatz_riscv_instr::VPACE_PWPA_S,
+        spatz_riscv_instr::VPACE_INV_S,
+        spatz_riscv_instr::VPACE_SQRT_S,
+        spatz_riscv_instr::VPACE_RSQRT_S,
+        spatz_riscv_instr::VPACE_PWPA_H,
+        spatz_riscv_instr::VPACE_INV_H,
+        spatz_riscv_instr::VPACE_SQRT_H,
+        spatz_riscv_instr::VPACE_RSQRT_H: begin
+          if (!RVF) begin
+            illegal_inst = 1'b1;
+          end
+        end
+
         // Move to the FPR
         spatz_riscv_instr::VFMV_F_S: begin
           use_fd = 1'b1;
