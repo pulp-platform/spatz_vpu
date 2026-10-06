@@ -88,7 +88,8 @@ package spatz_pkg;
   localparam int unsigned NrWordsPerBank   = NrVRFWords / NrVRFBanks;
 
   // Number of VLSU interfaces
-  localparam int unsigned NumVLSUInterfaces = ${int(cfg['spatz_nports'] / cfg['n_fpu'])};
+  // A VRF word spans the larger arithmetic bank, including IPU-heavy DIMC configs.
+  localparam int unsigned NumVLSUInterfaces = ${cfg['spatz_nports']} / N_FU;
 
   // Width of scalar register file adresses
   // Depends on whether we have a FP regfile or not
@@ -180,7 +181,9 @@ package spatz_pkg;
     VF2I, VF2U, VI2F, VU2F, VF2F,
     VFMADD, VFMSUB, VFNMSUB, VFNMADD, VSDOTP,
     // Ventaglio indexed fused-multiply ops (vfxmacc.vrf / vfxmul.vrf)
-    VFXMADD
+    VFXMADD,
+    // Digital in-memory compute instruction
+    DIMC_OP
   } op_e;
 
   // Execution units
@@ -199,6 +202,22 @@ package spatz_pkg;
   // Spatz request //
   ///////////////////
 
+  typedef enum logic [1:0] {
+    CSR_OP_NONE,
+    CSR_OP_WRITE,
+    CSR_OP_SET,
+    CSR_OP_CLEAR
+  } csr_op_e;
+
+  typedef struct packed {
+    logic [2:0] ci;
+    logic [1:0] kernel_group;
+    logic       imm;
+    logic       kernel_load;
+    logic       feature_reuse;
+    logic       compute_reuse;
+  } dimc_cfg_t;
+
   typedef struct packed {
     logic keep_vl;
     logic write_vstart;
@@ -214,10 +233,12 @@ package spatz_pkg;
     logic set_vtl_index_width;   // 0x7c4: encode IDXW_*
     logic set_vtl_blk_size;      // 0x7c5: encode BLK_*
     logic set_vtl_ratio;         // 0x7c6: encode SP_RATIO_*
+    dimc_cfg_t dimc;
   } op_cfg_t;
 
   typedef struct packed {
     logic [11:0] addr;
+    csr_op_e op;
   } op_csr_t;
 
   typedef struct packed {

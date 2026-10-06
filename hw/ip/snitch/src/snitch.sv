@@ -861,7 +861,10 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
           riscv_instr::CSR_VTLIDXW,
           riscv_instr::CSR_VTLBLKS,
           riscv_instr::CSR_VTLRATIO,
-          riscv_instr::CSR_VTLREG: begin
+          riscv_instr::CSR_VTLREG,
+          riscv_instr::CSR_DIMC_KERNEL,
+          riscv_instr::CSR_DIMC_FEATURE_REUSE,
+          riscv_instr::CSR_DIMC_COMPUTE_REUSE: begin
             if (RVV) begin
               write_rd        = 1'b0;
               uses_rd         = rd != 0;
@@ -895,7 +898,10 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
           riscv_instr::CSR_VTLIDXW,
           riscv_instr::CSR_VTLBLKS,
           riscv_instr::CSR_VTLRATIO,
-          riscv_instr::CSR_VTLREG: begin
+          riscv_instr::CSR_VTLREG,
+          riscv_instr::CSR_DIMC_KERNEL,
+          riscv_instr::CSR_DIMC_FEATURE_REUSE,
+          riscv_instr::CSR_DIMC_COMPUTE_REUSE: begin
             if (RVV) begin
               write_rd        = 1'b0;
               uses_rd         = rd != 0;
@@ -928,7 +934,10 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
           riscv_instr::CSR_VTLIDXW,
           riscv_instr::CSR_VTLBLKS,
           riscv_instr::CSR_VTLRATIO,
-          riscv_instr::CSR_VTLREG: begin
+          riscv_instr::CSR_VTLREG,
+          riscv_instr::CSR_DIMC_KERNEL,
+          riscv_instr::CSR_DIMC_FEATURE_REUSE,
+          riscv_instr::CSR_DIMC_COMPUTE_REUSE: begin
             if (RVV) begin
               write_rd        = 1'b0;
               uses_rd         = 1'b1;
@@ -963,7 +972,10 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
           riscv_instr::CSR_VTLIDXW,
           riscv_instr::CSR_VTLBLKS,
           riscv_instr::CSR_VTLRATIO,
-          riscv_instr::CSR_VTLREG: begin
+          riscv_instr::CSR_VTLREG,
+          riscv_instr::CSR_DIMC_KERNEL,
+          riscv_instr::CSR_DIMC_FEATURE_REUSE,
+          riscv_instr::CSR_DIMC_COMPUTE_REUSE: begin
             if (RVV) begin
               write_rd        = 1'b0;
               uses_rd         = 1'b1;
@@ -1002,7 +1014,10 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
           riscv_instr::CSR_VTLIDXW,
           riscv_instr::CSR_VTLBLKS,
           riscv_instr::CSR_VTLRATIO,
-          riscv_instr::CSR_VTLREG: begin
+          riscv_instr::CSR_VTLREG,
+          riscv_instr::CSR_DIMC_KERNEL,
+          riscv_instr::CSR_DIMC_FEATURE_REUSE,
+          riscv_instr::CSR_DIMC_COMPUTE_REUSE: begin
             if (RVV) begin
               write_rd        = 1'b0;
               uses_rd         = 1'b1;
@@ -1037,7 +1052,10 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
           riscv_instr::CSR_VTLIDXW,
           riscv_instr::CSR_VTLBLKS,
           riscv_instr::CSR_VTLRATIO,
-          riscv_instr::CSR_VTLREG: begin
+          riscv_instr::CSR_VTLREG,
+          riscv_instr::CSR_DIMC_KERNEL,
+          riscv_instr::CSR_DIMC_FEATURE_REUSE,
+          riscv_instr::CSR_DIMC_COMPUTE_REUSE: begin
             if (RVV) begin
               write_rd        = 1'b0;
               uses_rd         = 1'b1;
@@ -2576,7 +2594,8 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
       riscv_instr::VMV_V_I,
       riscv_instr::VFMV_F_S,
       riscv_instr::VSLIDEUP_VI,
-      riscv_instr::VSLIDEDOWN_VI: begin
+      riscv_instr::VSLIDEDOWN_VI,
+      riscv_instr::SF_VQMMACC: begin
         if (RVV) begin
           write_rd        = 1'b0;
           uses_rd         = 1'b0;
@@ -3024,15 +3043,19 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
             csr_rvalue = hart_id_i;
           end
           `ifdef SNITCH_ENABLE_PERF
+          CSR_CYCLE,
           CSR_MCYCLE: begin
             csr_rvalue = cycle_q[31:0];
           end
+          CSR_INSTRET,
           CSR_MINSTRET: begin
             csr_rvalue = instret_q[31:0];
           end
+          CSR_CYCLEH,
           CSR_MCYCLEH: begin
             csr_rvalue = cycle_q[63:32];
           end
+          CSR_INSTRETH,
           CSR_MINSTRETH: begin
             csr_rvalue = instret_q[63:32];
           end

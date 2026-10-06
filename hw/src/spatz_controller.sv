@@ -121,7 +121,15 @@ module spatz_controller
   `FF(VTLVreg_q, VTLVreg_d, '0)     // VTL register setting
   `FF(VTL_cfg_q, VTL_cfg_d, '0)
 `endif
+  elen_t  dimc_kernel_d, dimc_kernel_q;
+  elen_t  dimc_feature_reuse_d, dimc_feature_reuse_q;
+  elen_t  dimc_compute_reuse_d, dimc_compute_reuse_q;
+  logic   dimc_kernel_load_seen_d, dimc_kernel_load_seen_q;
 
+  `FF(dimc_kernel_q, dimc_kernel_d, '0)
+  `FF(dimc_feature_reuse_q, dimc_feature_reuse_d, '0)
+  `FF(dimc_compute_reuse_q, dimc_compute_reuse_d, '0)
+  `FF(dimc_kernel_load_seen_q, dimc_kernel_load_seen_d, 1'b0)
 
   always_comb begin : proc_vcsr
     automatic logic [$clog2(MAXVL):0] vlmax = 0;
@@ -135,6 +143,10 @@ module spatz_controller
     VTLVreg_d  = VTLVreg_q;
     VTL_cfg_d  = VTL_cfg_q;
 `endif
+    dimc_kernel_d        = dimc_kernel_q;
+    dimc_feature_reuse_d = dimc_feature_reuse_q;
+    dimc_compute_reuse_d = dimc_compute_reuse_q;
+    dimc_kernel_load_seen_d = dimc_kernel_load_seen_q;
 
     if (spatz_req_valid) begin
       // Reset vstart to zero if we have a new non CSR operation
@@ -173,7 +185,46 @@ module spatz_controller
           VTL_cfg_d.sp_cfg_ratio       = sp_ratio_e'(spatz_req.rs1);
 `endif
         end
-      end // spatz_req.op == VCSR
+
+        unique case (spatz_req.op_csr.addr)
+          riscv_instr::CSR_DIMC_KERNEL: begin
+            unique case (spatz_req.op_csr.op)
+              CSR_OP_WRITE: dimc_kernel_d = spatz_req.rs1;
+              CSR_OP_SET  : dimc_kernel_d = dimc_kernel_q | spatz_req.rs1;
+              CSR_OP_CLEAR: dimc_kernel_d = dimc_kernel_q & ~spatz_req.rs1;
+              default:;
+            endcase
+            if (spatz_req.op_csr.op != CSR_OP_NONE)
+              dimc_kernel_load_seen_d = 1'b0;
+          end
+          riscv_instr::CSR_DIMC_FEATURE_REUSE: begin
+            unique case (spatz_req.op_csr.op)
+              CSR_OP_WRITE: dimc_feature_reuse_d = spatz_req.rs1;
+              CSR_OP_SET  : dimc_feature_reuse_d = dimc_feature_reuse_q | spatz_req.rs1;
+              CSR_OP_CLEAR: dimc_feature_reuse_d = dimc_feature_reuse_q & ~spatz_req.rs1;
+              default:;
+            endcase
+          end
+          riscv_instr::CSR_DIMC_COMPUTE_REUSE: begin
+            unique case (spatz_req.op_csr.op)
+              CSR_OP_WRITE: dimc_compute_reuse_d = spatz_req.rs1;
+              CSR_OP_SET  : dimc_compute_reuse_d = dimc_compute_reuse_q | spatz_req.rs1;
+              CSR_OP_CLEAR: dimc_compute_reuse_d = dimc_compute_reuse_q & ~spatz_req.rs1;
+              default:;
+            endcase
+          end
+          default:;
+        endcase
+      end
+
+      if (spatz_req.op == DIMC_OP && |dimc_kernel_q) begin
+        if (dimc_kernel_load_seen_q) begin
+          dimc_kernel_d           = '0;
+          dimc_kernel_load_seen_d = 1'b0;
+        end else begin
+          dimc_kernel_load_seen_d = 1'b1;
+        end
+      end
 
       // Change vtype and vl if we have a config instruction
       if (spatz_req.op == VCFG) begin
@@ -612,8 +663,18 @@ module spatz_controller
 
       // RAW hazard
       if (spatz_req.use_vs2) begin
-        scoreboard_d[spatz_req.id].deps[write_table_d[spatz_req.vs2].id] |= write_table_d[spatz_req.vs2].valid;
-        read_table_d[spatz_req.vs2] = {spatz_req.id, 1'b1};
+        if (spatz_req.op == DIMC_OP && spatz_req.op_cfg.dimc.kernel_load) begin
+          for (int unsigned row = 0; row < 8; row++) begin
+            if ((int'(spatz_req.vs2) + row) < NRVREG) begin
+              scoreboard_d[spatz_req.id].deps[write_table_d[vreg_t'((int'(spatz_req.vs2) + row))].id] |=
+                  write_table_d[vreg_t'((int'(spatz_req.vs2) + row))].valid;
+              read_table_d[vreg_t'((int'(spatz_req.vs2) + row))] = {spatz_req.id, 1'b1};
+            end
+          end
+        end else begin
+          scoreboard_d[spatz_req.id].deps[write_table_d[spatz_req.vs2].id] |= write_table_d[spatz_req.vs2].valid;
+          read_table_d[spatz_req.vs2] = {spatz_req.id, 1'b1};
+        end
       end
       if (spatz_req.use_vs1) begin
         scoreboard_d[spatz_req.id].deps[write_table_d[spatz_req.vs1].id] |= write_table_d[spatz_req.vs1].valid;
@@ -649,7 +710,7 @@ module spatz_controller
       end
 
       // Is this a risky instruction which should not chain?
-      if (spatz_req.op inside {VSLIDEUP, VLSE, VLSEG, VLXE, VSSE, VSSEG, VSXE})
+      if (spatz_req.op inside {VSLIDEUP, VLSE, VLSEG, VLXE, VSSE, VSSEG, VSXE, DIMC_OP})
         scoreboard_d[spatz_req.id].prevent_chaining = 1'b1;
 
       // Is this a narrowing or widening instruction?
@@ -766,6 +827,13 @@ module spatz_controller
           spatz_req.vtype  = vtype_q;
           spatz_req.vl     = spatz_req.op_arith.widen_vs1 || spatz_req.op_arith.widen_vs2 ? vl_q * 2 : vl_q;
           spatz_req.vstart = vstart_q;
+          spatz_req.op_cfg.dimc.kernel_load   = |dimc_kernel_q;
+          spatz_req.op_cfg.dimc.feature_reuse = |dimc_feature_reuse_q;
+          spatz_req.op_cfg.dimc.compute_reuse = |dimc_compute_reuse_q;
+          if (spatz_req.op == DIMC_OP) begin
+            spatz_req.use_vs1 = !(|dimc_feature_reuse_q);
+            spatz_req.use_vs2 = |dimc_kernel_q;
+          end
 
           // Is this a scalar request?
           if (spatz_req.op_arith.is_scalar) begin
@@ -974,6 +1042,9 @@ module spatz_controller
             riscv_instr::CSR_VXSAT : rsp_d.data = elen_t'(vxsat_q);
             riscv_instr::CSR_VXRM  : rsp_d.data = '0;
             riscv_instr::CSR_VCSR  : rsp_d.data = '0;
+            riscv_instr::CSR_DIMC_KERNEL       : rsp_d.data = dimc_kernel_q;
+            riscv_instr::CSR_DIMC_FEATURE_REUSE: rsp_d.data = dimc_feature_reuse_q;
+            riscv_instr::CSR_DIMC_COMPUTE_REUSE: rsp_d.data = dimc_compute_reuse_q;
             default: rsp_d.data                 = '0;
           endcase
         end

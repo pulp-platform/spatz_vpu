@@ -49,6 +49,7 @@ sources:
     # Level 3
     - hw/src/spatz_fpu_sequencer.sv
     - hw/src/spatz_ipu.sv
+    - hw/src/spatz_DIMC.sv
     - hw/src/spatz_vfu.sv
     - hw/src/spatz_vlsu.sv
     - hw/src/spatz_doublebw_vlsu.sv

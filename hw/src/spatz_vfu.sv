@@ -81,6 +81,8 @@ module spatz_vfu
   } vfu_tag_t;
 
   logic [N_FPU-1:0] fpu_load_ready;
+  logic [N_FPU-1:0] fpu_stage_valid;
+  logic fpu_gather_busy;
 
 
   ///////////////////////
@@ -95,18 +97,61 @@ module spatz_vfu
   assign      vfu_vtl_req_ready_o = spatz_req_ready;
 `endif
 
+  logic operation_queue_full, operation_queue_empty;
+  spatz_req_t dimc_req;
+  logic dimc_req_valid;
+  logic dimc_queue_full, dimc_queue_empty;
+  logic exclusive_request;
+  logic [NrParallelInstructions-1:0] exclusive_inflight_q, exclusive_inflight_d;
+  `FF(exclusive_inflight_q, exclusive_inflight_d, '0)
+  assign exclusive_request = (FPU && spatz_req_i.op inside {[VFADD:VSDOTP], VFXMADD}) ||
+                              spatz_req_i.op_arith.is_reduction;
+  always_comb begin
+    exclusive_inflight_d = exclusive_inflight_q;
+    if (vfu_rsp_valid_o) exclusive_inflight_d[vfu_rsp_o.id] = 1'b0;
+    if (spatz_req_valid_i && spatz_req_ready_o && spatz_req_i.ex_unit == VFU && exclusive_request)
+      exclusive_inflight_d[spatz_req_i.id] = 1'b1;
+  end
+
+  // Keep upstream registered dispatch for ordinary arithmetic, so the
+  // controller installs scoreboard dependencies before operand reads.
+  logic operation_queue_ready;
+  assign operation_queue_full = !operation_queue_ready;
+  assign operation_queue_empty = !spatz_req_valid;
   spill_register #(
     .T(spatz_req_t)
   ) i_operation_queue (
-    .clk_i  (clk_i                                          ),
-    .rst_ni (rst_ni                                         ),
-    .data_i (spatz_req_i                                    ),
-    .valid_i(spatz_req_valid_i && spatz_req_i.ex_unit == VFU),
-    .ready_o(spatz_req_ready_o                              ),
-    .data_o (spatz_req                                      ),
-    .valid_o(spatz_req_valid                                ),
-    .ready_i(spatz_req_ready                                )
+    .clk_i(clk_i), .rst_ni(rst_ni),
+    .data_i(spatz_req_i),
+    .valid_i(spatz_req_valid_i && spatz_req_i.ex_unit == VFU &&
+             spatz_req_i.op != DIMC_OP && spatz_req_ready_o),
+    .ready_o(operation_queue_ready),
+    .data_o(spatz_req), .valid_o(spatz_req_valid), .ready_i(spatz_req_ready)
   );
+
+  // A computing DIMC instruction must not block an independent IPU partial
+  // sum. Dependencies remain enforced by the controller's VRF scoreboard.
+  fifo_v3 #(
+    .FALL_THROUGH(1'b0),
+    .DEPTH       (2),
+    .dtype       (spatz_req_t)
+  ) i_dimc_operation_queue (
+    .clk_i(clk_i), .rst_ni(rst_ni), .flush_i(1'b0), .testmode_i(1'b0),
+    .full_o(dimc_queue_full), .empty_o(dimc_queue_empty), .usage_o(),
+    .data_i(spatz_req_i),
+    .push_i(spatz_req_valid_i && spatz_req_i.ex_unit == VFU &&
+            spatz_req_i.op == DIMC_OP && spatz_req_ready_o),
+    .data_o(dimc_req),
+    .pop_i(dimc_instr_done && !dimc_queue_empty)
+  );
+
+  // Preserve ordering around FPU/reduction operations at dispatch. Blocking
+  // them after queueing could deadlock a DIMC operand dependent on such work.
+  assign spatz_req_ready_o = spatz_req_i.op == DIMC_OP ?
+                              (!dimc_queue_full && !(|exclusive_inflight_q)) :
+                              (!operation_queue_full &&
+                               (!exclusive_request || (!dimc_req_valid && !dimc_inflight)));
+  assign dimc_req_valid    = !dimc_queue_empty;
 
   ///////////////
   //  Control  //
@@ -134,7 +179,7 @@ module spatz_vfu
   assign nr_elem_word_divsqrt = (1 << (MAXEW - spatz_req.vtype.vsew));
 
   // Are we running integer or floating-point instructions?
-  typedef enum logic {
+  typedef enum logic [1:0] {
     VFU_RunningIPU, VFU_RunningFPU
    } state_t;
    state_t state_d, state_q;
@@ -194,6 +239,290 @@ module spatz_vfu
 
   // Is the IPU busy?
   logic is_ipu_busy;
+
+  // DIMC control
+  localparam int unsigned DimcSectionWidth    = 512;
+  localparam int unsigned DimcWordsPerSection = DimcSectionWidth / VRFWordWidth;
+  localparam int unsigned DimcSections        =
+      (NrWordsPerVector + DimcWordsPerSection - 1) / DimcWordsPerSection;
+  localparam int unsigned DimcRowWidth        = DimcSectionWidth * DimcSections;
+  localparam int unsigned DimcSectionIdxWidth = DimcSections > 1 ? $clog2(DimcSections) : 1;
+  localparam int unsigned DimcValidBitsWidth  = $clog2(DimcRowWidth + 1);
+  localparam int unsigned DimcResultsPerWord  = VRFWordWidth / 32;
+  localparam int unsigned DimcVqmmaccRows     = 8;
+  localparam int unsigned DimcInitCycles      = 3;
+  localparam int unsigned DimcInitCountWidth  =
+      DimcInitCycles > 1 ? $clog2(DimcInitCycles) : 1;
+  localparam int unsigned DimcVqmmaccWords    =
+      (DimcVqmmaccRows * 32 + VRFWordWidth - 1) / VRFWordWidth;
+  localparam int unsigned DimcResultWords     = 2 * DimcVqmmaccWords;
+  localparam int unsigned DimcWriteIdxWidth   =
+      DimcResultWords > 1 ? $clog2(DimcResultWords) : 1;
+  typedef logic [DimcSectionWidth-1:0] dimc_data_t;
+
+  typedef enum logic [2:0] {
+    DimcIdle,
+    DimcLoadFeature,
+    DimcLoadKernel,
+    DimcComputeInit,
+    DimcComputeIssue,
+    DimcWriteResult
+  } dimc_state_t;
+
+  dimc_state_t dimc_state_d, dimc_state_q;
+  // The queue entry can retire before the last row because its operands and
+  // configuration are already latched. Architectural completion is still the
+  // final accepted VRF write, through dimc_rsp_done.
+  logic dimc_request_released_d, dimc_request_released_q;
+  logic [DimcSectionIdxWidth-1:0] dimc_section_d, dimc_section_q;
+  logic [4:0]                     dimc_row_d, dimc_row_q;
+  logic [DimcInitCountWidth-1:0]  dimc_init_count_d, dimc_init_count_q;
+  logic [4:0]                     dimc_capture_count_d, dimc_capture_count_q;
+  vrf_data_t                      dimc_result_d [DimcResultWords-1:0];
+  vrf_data_t                      dimc_result_q [DimcResultWords-1:0];
+  logic [4:0]                     dimc_tail_capture_count_d, dimc_tail_capture_count_q;
+  vrf_data_t                      dimc_tail_result_d [DimcResultWords-1:0];
+  vrf_data_t                      dimc_tail_result_q [DimcResultWords-1:0];
+  logic                           dimc_wb_pending_d, dimc_wb_pending_q;
+  spatz_id_t                      dimc_wb_id_d, dimc_wb_id_q;
+  vrf_addr_t                      dimc_wb_base_addr_d, dimc_wb_base_addr_q;
+  logic [DimcWriteIdxWidth-1:0]   dimc_wb_word_d, dimc_wb_word_q;
+  logic [DimcWriteIdxWidth-1:0]   dimc_wb_last_word_d, dimc_wb_last_word_q;
+  vrf_data_t                      dimc_wb_result_d [DimcResultWords-1:0];
+  vrf_data_t                      dimc_wb_result_q [DimcResultWords-1:0];
+  logic                           dimc_tail_pending_d, dimc_tail_pending_q;
+  logic                           dimc_tail_done_pending_d, dimc_tail_done_pending_q;
+  spatz_id_t                      dimc_tail_id_d, dimc_tail_id_q;
+  vrf_addr_t                      dimc_tail_base_addr_d, dimc_tail_base_addr_q;
+  logic [DimcWriteIdxWidth-1:0]   dimc_tail_first_word_d, dimc_tail_first_word_q;
+  logic [DimcWriteIdxWidth-1:0]   dimc_tail_last_word_d, dimc_tail_last_word_q;
+  logic [4:0]                     dimc_tail_row_limit_d, dimc_tail_row_limit_q;
+  logic [4:0]                     dimc_tail_row_offset_d, dimc_tail_row_offset_q;
+  spatz_id_t                      dimc_active_id_d, dimc_active_id_q;
+  vreg_t                          dimc_active_vs1_d, dimc_active_vs1_q;
+  vreg_t                          dimc_active_vs2_d, dimc_active_vs2_q;
+  vreg_t                          dimc_active_vd_d, dimc_active_vd_q;
+  vlen_t                          dimc_active_vl_d, dimc_active_vl_q;
+  dimc_cfg_t                      dimc_active_cfg_d, dimc_active_cfg_q;
+
+  `FF(dimc_state_q, dimc_state_d, DimcIdle)
+  `FF(dimc_request_released_q, dimc_request_released_d, 1'b0)
+  `FF(dimc_section_q, dimc_section_d, '0)
+  `FF(dimc_row_q, dimc_row_d, '0)
+  `FF(dimc_init_count_q, dimc_init_count_d, '0)
+  `FF(dimc_capture_count_q, dimc_capture_count_d, '0)
+  `FF(dimc_tail_capture_count_q, dimc_tail_capture_count_d, '0)
+  `FF(dimc_wb_pending_q, dimc_wb_pending_d, 1'b0)
+  `FF(dimc_wb_id_q, dimc_wb_id_d, '0)
+  `FF(dimc_wb_base_addr_q, dimc_wb_base_addr_d, '0)
+  `FF(dimc_wb_word_q, dimc_wb_word_d, '0)
+  `FF(dimc_wb_last_word_q, dimc_wb_last_word_d, '0)
+  `FF(dimc_tail_pending_q, dimc_tail_pending_d, 1'b0)
+  `FF(dimc_tail_done_pending_q, dimc_tail_done_pending_d, 1'b0)
+  `FF(dimc_tail_id_q, dimc_tail_id_d, '0)
+  `FF(dimc_tail_base_addr_q, dimc_tail_base_addr_d, '0)
+  `FF(dimc_tail_first_word_q, dimc_tail_first_word_d, '0)
+  `FF(dimc_tail_last_word_q, dimc_tail_last_word_d, '0)
+  `FF(dimc_tail_row_limit_q, dimc_tail_row_limit_d, '0)
+  `FF(dimc_tail_row_offset_q, dimc_tail_row_offset_d, '0)
+  `FF(dimc_active_id_q, dimc_active_id_d, '0)
+  `FF(dimc_active_vs1_q, dimc_active_vs1_d, '0)
+  `FF(dimc_active_vs2_q, dimc_active_vs2_d, '0)
+  `FF(dimc_active_vd_q, dimc_active_vd_d, '0)
+  `FF(dimc_active_vl_q, dimc_active_vl_d, '0)
+  `FF(dimc_active_cfg_q, dimc_active_cfg_d, '0)
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      dimc_result_q <= '{default: '0};
+      dimc_tail_result_q <= '{default: '0};
+      dimc_wb_result_q <= '{default: '0};
+    end else begin
+      dimc_result_q <= dimc_result_d;
+      dimc_tail_result_q <= dimc_tail_result_d;
+      dimc_wb_result_q <= dimc_wb_result_d;
+    end
+  end
+
+  logic       dimc_busy;
+  logic       dimc_start;
+  logic       dimc_turnover;
+  logic       dimc_instr_done;
+  logic       dimc_rsp_done;
+  logic       dimc_load_feature;
+  logic       dimc_vrf_read_feature;
+  logic       dimc_vrf_read_kernel;
+  logic       dimc_vrf_read_upper;
+  logic       dimc_read_grant;
+  logic       dimc_read_turn_q, dimc_read_turn_d;
+  logic       dimc_read_request, normal_read_request;
+  logic       dimc_inflight;
+  `FF(dimc_read_turn_q, dimc_read_turn_d, 1'b1)
+  logic       dimc_write_grant, normal_write_request;
+  logic       dimc_write_turn_q, dimc_write_turn_d;
+  `FF(dimc_write_turn_q, dimc_write_turn_d, 1'b1)
+  logic       dimc_write_valid;
+  logic       dimc_wb_accept;
+  logic       dimc_wb_done;
+  logic       dimc_wb_can_enqueue;
+  logic       dimc_capture_complete;
+  logic       dimc_wb_write_through;
+  logic       dimc_wb_write_through_accept;
+  logic       dimc_compute_fire;
+  logic       dimc_capture_valid;
+  logic       dimc_handoff_tail;
+  logic [4:0] dimc_row_limit;
+  logic [4:0] dimc_capture_row;
+  logic [4:0] dimc_capture_row_limit;
+  logic [4:0] dimc_capture_row_offset;
+  logic [4:0] dimc_result_row_offset;
+  logic [4:0] dimc_result_index;
+  spatz_id_t  dimc_capture_id;
+  vrf_addr_t  dimc_capture_base_addr;
+  logic [DimcWriteIdxWidth-1:0] dimc_capture_first_write_word;
+  logic [DimcWriteIdxWidth-1:0] dimc_capture_last_write_word;
+  vrf_addr_t  dimc_result_base_addr;
+  logic [DimcWriteIdxWidth-1:0] dimc_first_write_word;
+  logic [DimcWriteIdxWidth-1:0] dimc_last_write_word;
+  logic [DimcWriteIdxWidth-1:0] dimc_write_word;
+  logic [DimcWriteIdxWidth-1:0] dimc_write_last_word;
+  spatz_id_t  dimc_write_id;
+  vreg_t      dimc_kernel_vreg;
+  logic [31:0] dimc_result_word;
+  vrf_addr_t  dimc_feature_addr;
+  vrf_addr_t  dimc_kernel_addr;
+  vrf_addr_t  dimc_upper_addr;
+  vrf_addr_t  dimc_write_addr;
+  vrf_data_t  dimc_write_data;
+
+  logic       dimc_readyn;
+  logic       dimc_compe;
+  logic       dimc_fcsn;
+  logic [1:0] dimc_mode;
+  logic [1:0] dimc_fa;
+  dimc_data_t dimc_fd;
+  logic [23:0] dimc_addin;
+  logic       dimc_sout;
+  logic [2:0] dimc_res_out;
+  logic [23:0] dimc_psout;
+  dimc_data_t dimc_q;
+  dimc_data_t dimc_d;
+  logic [6:0] dimc_ra;
+  logic [6:0] dimc_wa;
+  logic       dimc_rcsn;
+  logic       dimc_rcsn0;
+  logic       dimc_rcsn1;
+  logic       dimc_rcsn2;
+  logic       dimc_rcsn3;
+  logic       dimc_wcsn;
+  logic       dimc_wen;
+  dimc_data_t dimc_mask;
+  logic [7:0] dimc_mct;
+  logic [7:0] dimc_active_mct;
+  logic [8:0] dimc_tail_quads;
+  logic [DimcValidBitsWidth-1:0] dimc_active_bits;
+  logic [DimcValidBitsWidth-1:0] dimc_tail_bits;
+
+  assign dimc_busy  = dimc_state_q != DimcIdle;
+  // Latch the next queued instruction at the edge that finishes the current
+  // last row. If capture/writeback is blocked, retain the ordinary idle path.
+  assign dimc_turnover = dimc_state_q == DimcComputeIssue &&
+                         dimc_row_q == DimcVqmmaccRows - 1 &&
+                         dimc_request_released_q && !dimc_tail_pending_q &&
+                         dimc_capture_complete && dimc_wb_can_enqueue;
+  assign dimc_inflight = dimc_busy || dimc_tail_pending_q ||
+                         dimc_tail_done_pending_q || dimc_wb_pending_q;
+  assign dimc_start = dimc_req_valid && !is_fpu_busy &&
+                      reduction_state_q == Reduction_NormalExecution &&
+                      (!dimc_busy || dimc_turnover) && !dimc_tail_done_pending_q;
+
+  // Alternate ownership when both queues need the shared read ports. In
+  // particular, a DIMC operand waiting on an older IPU result must not starve
+  // the IPU reads that produce that result. A stalled grant also yields.
+  assign dimc_read_request = dimc_state_q inside {DimcLoadFeature, DimcLoadKernel};
+  assign normal_read_request = spatz_req_valid &&
+      (operand_state_q != READ_OPERANDS || reduction_state_q == Reduction_Read_V0_t ||
+       (vl_q < spatz_req.vl && (spatz_req.use_vs1 || spatz_req.use_vs2 || spatz_req.vd_is_src)));
+  assign dimc_read_grant = dimc_read_request && (!normal_read_request || dimc_read_turn_q);
+  assign dimc_read_turn_d = dimc_read_request && normal_read_request ?
+                            !dimc_read_turn_q : 1'b1;
+  assign dimc_capture_valid = !dimc_readyn;
+  assign dimc_capture_row   = dimc_tail_pending_q ? dimc_tail_capture_count_q :
+                                                    dimc_capture_count_q;
+  assign dimc_capture_complete = dimc_capture_valid &&
+                                 (dimc_state_q == DimcComputeIssue || dimc_tail_pending_q) &&
+                                 (dimc_capture_row == dimc_capture_row_limit - 1'b1);
+  assign dimc_wb_write_through = dimc_capture_complete && !dimc_wb_pending_q;
+  assign dimc_write_valid   = dimc_wb_pending_q || dimc_wb_write_through;
+  assign dimc_write_id      = dimc_wb_write_through ? dimc_capture_id : dimc_wb_id_q;
+  assign dimc_write_word    = dimc_wb_write_through ? dimc_capture_first_write_word :
+                                                        dimc_wb_word_q;
+  assign dimc_write_last_word = dimc_wb_write_through ? dimc_capture_last_write_word :
+                                                          dimc_wb_last_word_q;
+  assign dimc_write_addr    = dimc_wb_write_through ?
+                              vrf_addr_t'(int'(dimc_capture_base_addr) +
+                                          int'(dimc_capture_first_write_word)) :
+                              vrf_addr_t'(int'(dimc_wb_base_addr_q) + int'(dimc_wb_word_q));
+  assign dimc_write_data    = dimc_wb_write_through ?
+                              (dimc_tail_pending_q ?
+                               dimc_tail_result_d[dimc_capture_first_write_word] :
+                               dimc_result_d[dimc_capture_first_write_word]) :
+                              dimc_wb_result_q[dimc_wb_word_q];
+  // A later DIMC destination can depend on an older IPU write. Yield even
+  // when the selected write is blocked by the scoreboard, to avoid deadlock.
+  assign normal_write_request = &(result_valid | ~pending_results) && !result_tag.reduction;
+  assign dimc_write_grant = dimc_write_valid && (!normal_write_request || dimc_write_turn_q);
+  assign dimc_write_turn_d = dimc_write_valid && normal_write_request ?
+                             !dimc_write_turn_q : 1'b1;
+  assign dimc_wb_accept     = dimc_write_grant && vrf_wvalid_i;
+  assign dimc_wb_write_through_accept = dimc_wb_write_through && dimc_wb_accept;
+  assign dimc_wb_done       = dimc_wb_accept && (dimc_write_word == dimc_write_last_word);
+  assign dimc_wb_can_enqueue = !dimc_wb_pending_q || dimc_wb_done;
+  assign dimc_rsp_done      = dimc_wb_done;
+
+  always_comb begin : dimc_mct_proc
+    dimc_active_bits = DimcValidBitsWidth'(dimc_active_vl_q) << dimc_active_cfg_q.ci[1:0];
+    dimc_tail_bits   = '0;
+    dimc_tail_quads  = '0;
+    dimc_active_mct  = '0;
+
+    if (dimc_active_bits < DimcValidBitsWidth'(DimcRowWidth)) begin
+      dimc_tail_bits  = DimcValidBitsWidth'(DimcRowWidth) - dimc_active_bits;
+      dimc_tail_quads = 9'(dimc_tail_bits[DimcValidBitsWidth-1:2]);
+      dimc_active_mct = dimc_tail_quads[8] ? 8'hff : dimc_tail_quads[7:0];
+    end
+  end : dimc_mct_proc
+
+  DIMC #(
+    .SECTION_WIDTH(DimcSectionWidth),
+    .NUM_SECTIONS (DimcSections)
+  ) i_dimc (
+    .RCK   (clk_i        ),
+    .RESETn(rst_ni       ),
+    .READYN(dimc_readyn  ),
+    .COMPE (dimc_compe   ),
+    .FCSN  (dimc_fcsn    ),
+    .MODE  (dimc_mode    ),
+    .FA    (dimc_fa      ),
+    .FD    (dimc_fd      ),
+    .ADDIN (dimc_addin   ),
+    .SOUT  (dimc_sout    ),
+    .RES_OUT(dimc_res_out),
+    .PSOUT (dimc_psout   ),
+    .Q     (dimc_q       ),
+    .D     (dimc_d       ),
+    .RA    (dimc_ra      ),
+    .WA    (dimc_wa      ),
+    .RCSN  (dimc_rcsn    ),
+    .RCSN0 (dimc_rcsn0   ),
+    .RCSN1 (dimc_rcsn1   ),
+    .RCSN2 (dimc_rcsn2   ),
+    .RCSN3 (dimc_rcsn3   ),
+    .WCK   (clk_i        ),
+    .WCSN  (dimc_wcsn    ),
+    .WEN   (dimc_wen     ),
+    .M     (dimc_mask    ),
+    .MCT   (dimc_mct     )
+  );
 
   // Scalar results (sent back to Snitch)
   elen_t scalar_result;
@@ -297,7 +626,7 @@ module spatz_vfu
         VFU_RunningIPU: begin
           // Only go to the FPU state once the IPUs are no longer busy
           if (is_fpu_insn) begin
-            if (is_ipu_busy)
+            if (is_ipu_busy || dimc_inflight || dimc_start)
               stall = 1'b1;
             else begin
               state_d = VFU_RunningFPU;
@@ -318,11 +647,17 @@ module spatz_vfu
         default:;
       endcase
 
+    // Only ordinary IPU arithmetic overlaps DIMC. Reductions and FPU work
+    // retain their existing exclusive execution protocol.
+    if (dimc_read_grant ||
+        ((is_fpu_insn || spatz_req.op_arith.is_reduction) && (dimc_inflight || dimc_start)))
+      stall = 1'b1;
+
     // Finished the execution!
     if (spatz_req_valid && ((vl_d >= spatz_req.vl && !spatz_req.op_arith.is_reduction) || reduction_done || last_divsqrt)) begin
       if(divsqrt_shared_active) begin
           last_request            = 1'b1;
-        if(result_tag.last)begin
+        if (result_tag.last && result_ready && fu_word_complete) begin
           spatz_req_ready         = spatz_req_valid;
           busy_d                  = 1'b0;
           vl_d                    = '0;
@@ -353,7 +688,13 @@ module spatz_vfu
     end
 
     // An instruction finished execution
-    if ((result_tag.last && fu_word_complete && (reduction_state_q inside {Reduction_NormalExecution, Reduction_Wait} || ! result_tag.reduction)) || reduction_done) begin
+    if (dimc_rsp_done) begin
+      vfu_rsp_o.id      = dimc_write_id;
+      vfu_rsp_o.rd      = '0;
+      vfu_rsp_o.wb      = 1'b0;
+      vfu_rsp_o.result  = '0;
+      vfu_rsp_valid_o   = 1'b1;
+    end else if ((result_tag.last && result_ready && fu_word_complete && (reduction_state_q inside {Reduction_NormalExecution, Reduction_Wait} || ! result_tag.reduction)) || reduction_done) begin
       vfu_rsp_o.id      = result_tag.id;
       vfu_rsp_o.rd      = result_tag.vd_addr[GPRWidth-1:0];
       vfu_rsp_o.wb      = result_tag.wb;
@@ -382,7 +723,7 @@ module spatz_vfu
       fpu_op           = fpnew_pkg::FMADD;
       fpu_op_mode      = 1'b0;
       fpu_vectorial_op = 1'b0;
-      is_fpu_busy      = |fpu_busy_q;
+      is_fpu_busy      = |fpu_busy_q || |fpu_stage_valid || fpu_gather_busy;
       fpu_src_fmt      = fpnew_pkg::FP32;
       fpu_dst_fmt      = fpnew_pkg::FP32;
       fpu_int_fmt      = fpnew_pkg::INT32;
@@ -560,9 +901,9 @@ module spatz_vfu
 
   // FSM to manage operands between normal calculation and v0.t fetching
   logic v0_t_is_ready;
-  assign v0_t_is_ready   = (operand_state_q == READ_V0_t) && vrf_rvalid_i[0] && vrf_rvalid_i[1];
+  assign v0_t_is_ready   = !dimc_read_grant && (operand_state_q == READ_V0_t) && vrf_rvalid_i[0] && vrf_rvalid_i[1];
   logic vd_t_is_ready;
-  assign vd_t_is_ready   = (operand_state_q == READ_VD_t) && vrf_rvalid_i[0] && vrf_rvalid_i[1];
+  assign vd_t_is_ready   = !dimc_read_grant && (operand_state_q == READ_VD_t) && vrf_rvalid_i[0] && vrf_rvalid_i[1];
   logic v0_t_read_done;
   logic v0_t_read_done_d;
   always_comb begin
@@ -697,7 +1038,7 @@ module spatz_vfu
   assign divsqrt_closing_slot = (divsqrt_slot_q == N_FU - 1) || result_tag.last;
 
   // Intermediate slots are always absorbed by the accumulator --> the closing slot is handed over only when the VRF commits the word
-  assign divsqrt_shared_ready = !divsqrt_done_q && (!divsqrt_closing_slot || vrf_wvalid_i);
+  assign divsqrt_shared_ready = !divsqrt_done_q && (!divsqrt_closing_slot || (!dimc_write_grant && vrf_wvalid_i));
 
   assign divsqrt_pop = divsqrt_shared_active && (fpu_result_valid[ELENB-1:0] == '1) && divsqrt_shared_ready;
 
@@ -776,6 +1117,329 @@ module spatz_vfu
   // Inactive elements are set to 1 under ma and left undisturbed under mu
   logic [VLEN-1:0] cmp_dst_inactive;
   assign cmp_dst_inactive = result_tag.vma ? '1 : cmp_mask_dst_q;
+
+  always_comb begin : dimc_proc
+	    dimc_state_d      = dimc_state_q;
+    dimc_request_released_d = dimc_request_released_q;
+	    dimc_section_d    = dimc_section_q;
+	    dimc_row_d        = dimc_row_q;
+	    dimc_init_count_d = dimc_init_count_q;
+	    dimc_capture_count_d = dimc_capture_count_q;
+	    dimc_result_d     = dimc_result_q;
+	    dimc_tail_capture_count_d = dimc_tail_capture_count_q;
+	    dimc_tail_result_d = dimc_tail_result_q;
+	    dimc_wb_pending_d = dimc_wb_pending_q;
+	    dimc_wb_id_d      = dimc_wb_id_q;
+	    dimc_wb_base_addr_d = dimc_wb_base_addr_q;
+	    dimc_wb_word_d    = dimc_wb_word_q;
+	    dimc_wb_last_word_d = dimc_wb_last_word_q;
+	    dimc_wb_result_d  = dimc_wb_result_q;
+	    dimc_tail_pending_d = dimc_tail_pending_q;
+	    dimc_tail_done_pending_d = dimc_tail_done_pending_q;
+	    dimc_tail_id_d = dimc_tail_id_q;
+	    dimc_tail_base_addr_d = dimc_tail_base_addr_q;
+	    dimc_tail_first_word_d = dimc_tail_first_word_q;
+	    dimc_tail_last_word_d = dimc_tail_last_word_q;
+	    dimc_tail_row_limit_d = dimc_tail_row_limit_q;
+	    dimc_tail_row_offset_d = dimc_tail_row_offset_q;
+    dimc_active_id_d = dimc_active_id_q;
+    dimc_active_vs1_d = dimc_active_vs1_q;
+    dimc_active_vs2_d = dimc_active_vs2_q;
+    dimc_active_vd_d = dimc_active_vd_q;
+    dimc_active_vl_d = dimc_active_vl_q;
+    dimc_active_cfg_d = dimc_active_cfg_q;
+
+    dimc_instr_done      = 1'b0;
+    dimc_load_feature    = !dimc_active_cfg_q.feature_reuse;
+    dimc_vrf_read_feature = 1'b0;
+    dimc_vrf_read_kernel  = 1'b0;
+    dimc_vrf_read_upper   = 1'b0;
+    dimc_compute_fire     = 1'b0;
+    dimc_handoff_tail     = 1'b0;
+
+    if (dimc_wb_pending_q && dimc_wb_accept) begin
+      if (dimc_wb_word_q == dimc_wb_last_word_q) begin
+        dimc_wb_pending_d = 1'b0;
+      end else begin
+        dimc_wb_word_d = dimc_wb_word_q + 1'b1;
+      end
+    end
+
+    if (dimc_tail_done_pending_q && dimc_wb_can_enqueue) begin
+      dimc_wb_pending_d        = 1'b1;
+      dimc_wb_id_d             = dimc_tail_id_q;
+      dimc_wb_base_addr_d      = dimc_tail_base_addr_q;
+      dimc_wb_word_d           = dimc_tail_first_word_q;
+      dimc_wb_last_word_d      = dimc_tail_last_word_q;
+      dimc_wb_result_d         = dimc_tail_result_q;
+      dimc_tail_done_pending_d = 1'b0;
+    end
+
+    dimc_row_limit   = DimcVqmmaccRows;
+    dimc_kernel_vreg = vreg_t'(dimc_active_vs2_q + dimc_row_q);
+    dimc_result_word = {8'b0, dimc_psout};
+
+    dimc_feature_addr = vrf_addr_t'((int'(dimc_active_vs1_q) * NrWordsPerVector) +
+	                                    (int'(dimc_section_q) * DimcWordsPerSection));
+    dimc_kernel_addr  = vrf_addr_t'((int'(dimc_kernel_vreg) * NrWordsPerVector) +
+	                                    (int'(dimc_section_q) * DimcWordsPerSection));
+    dimc_upper_addr   = '0;
+    dimc_result_base_addr = vrf_addr_t'(int'(dimc_active_vd_q) * NrWordsPerVector);
+    dimc_result_row_offset = dimc_active_cfg_q.ci[2] ? 5'd8 : 5'd0;
+    dimc_first_write_word  = dimc_active_cfg_q.ci[2] ?
+                             DimcWriteIdxWidth'(DimcVqmmaccWords) : '0;
+    dimc_last_write_word   = dimc_first_write_word;
+    dimc_capture_row_limit = dimc_tail_pending_q ? dimc_tail_row_limit_q : dimc_row_limit;
+    dimc_capture_row_offset = dimc_tail_pending_q ? dimc_tail_row_offset_q : dimc_result_row_offset;
+    dimc_capture_id = dimc_tail_pending_q ? dimc_tail_id_q : dimc_active_id_q;
+    dimc_capture_base_addr = dimc_tail_pending_q ? dimc_tail_base_addr_q : dimc_result_base_addr;
+    dimc_capture_first_write_word =
+        dimc_tail_pending_q ? dimc_tail_first_word_q : dimc_first_write_word;
+    dimc_capture_last_write_word =
+        dimc_tail_pending_q ? dimc_tail_last_word_q : dimc_last_write_word;
+    dimc_result_index = dimc_capture_row_offset + dimc_capture_row;
+
+    dimc_compe = 1'b0;
+    dimc_fcsn  = 1'b1;
+    dimc_mode  = dimc_active_cfg_q.ci[1:0];
+    dimc_fa    = 2'(dimc_section_q);
+    dimc_fd    = '0;
+    dimc_addin = '0;
+    dimc_d     = '0;
+    dimc_ra    = {dimc_kernel_vreg, 2'b00};
+    dimc_wa    = {dimc_kernel_vreg, 2'(dimc_section_q)};
+    dimc_rcsn  = 1'b1;
+    dimc_rcsn0 = 1'b1;
+    dimc_rcsn1 = 1'b1;
+    dimc_rcsn2 = 1'b1;
+    dimc_rcsn3 = 1'b1;
+    dimc_wcsn  = 1'b1;
+    dimc_wen   = 1'b1;
+    dimc_mask  = '1;
+    dimc_mct   = dimc_active_mct;
+
+    unique case (dimc_state_q)
+      DimcIdle: ; // Initial issue and final-row turnover share the launch below.
+
+      DimcLoadFeature: begin
+        dimc_fa = 2'(dimc_section_q);
+        if (int'(dimc_section_q) < DimcSections) begin
+          dimc_vrf_read_feature = dimc_read_grant;
+          dimc_vrf_read_upper   = dimc_read_grant && DimcWordsPerSection > 1;
+          dimc_upper_addr       = dimc_feature_addr + 1'b1;
+          dimc_fd               = {vrf_rdata_i[2], vrf_rdata_i[1]};
+          dimc_fcsn             = ~(dimc_read_grant && vrf_rvalid_i[1] &&
+                                    (!dimc_vrf_read_upper || vrf_rvalid_i[2]));
+          if (dimc_read_grant && vrf_rvalid_i[1] && (!dimc_vrf_read_upper || vrf_rvalid_i[2])) begin
+            if (dimc_section_q == DimcSectionIdxWidth'(DimcSections - 1)) begin
+              dimc_section_d = '0;
+              dimc_state_d   = dimc_active_cfg_q.kernel_load ? DimcLoadKernel : DimcComputeInit;
+            end else begin
+              dimc_section_d = dimc_section_q + 1'b1;
+            end
+          end
+        end else begin
+          dimc_fd   = '0;
+          dimc_fcsn = 1'b0;
+          if (dimc_section_q == DimcSectionIdxWidth'(DimcSections - 1)) begin
+            dimc_section_d = '0;
+            dimc_state_d   = dimc_active_cfg_q.kernel_load ? DimcLoadKernel : DimcComputeInit;
+          end else begin
+            dimc_section_d = dimc_section_q + 1'b1;
+          end
+        end
+      end
+
+      DimcLoadKernel: begin
+        dimc_wa = {dimc_kernel_vreg, 2'(dimc_section_q)};
+        if (int'(dimc_section_q) < DimcSections) begin
+          dimc_vrf_read_kernel = dimc_read_grant;
+          dimc_vrf_read_upper  = dimc_read_grant && DimcWordsPerSection > 1;
+          dimc_upper_addr      = dimc_kernel_addr + 1'b1;
+          dimc_d               = {vrf_rdata_i[2], vrf_rdata_i[0]};
+          dimc_wcsn            = ~(dimc_read_grant && vrf_rvalid_i[0] &&
+                                   (!dimc_vrf_read_upper || vrf_rvalid_i[2]));
+          dimc_wen             = ~(dimc_read_grant && vrf_rvalid_i[0] &&
+                                   (!dimc_vrf_read_upper || vrf_rvalid_i[2]));
+          if (dimc_read_grant && vrf_rvalid_i[0] && (!dimc_vrf_read_upper || vrf_rvalid_i[2])) begin
+            if (dimc_section_q == DimcSectionIdxWidth'(DimcSections - 1)) begin
+              dimc_section_d = '0;
+              if (dimc_row_q == dimc_row_limit - 1'b1) begin
+                dimc_row_d   = '0;
+	                dimc_state_d = dimc_active_cfg_q.feature_reuse
+	                                   ? DimcComputeIssue
+	                                   : DimcComputeInit;
+              end else begin
+                dimc_row_d = dimc_row_q + 1'b1;
+              end
+            end else begin
+              dimc_section_d = dimc_section_q + 1'b1;
+            end
+          end
+        end else begin
+          dimc_d    = '0;
+          dimc_wcsn = 1'b0;
+          dimc_wen  = 1'b0;
+          if (dimc_section_q == DimcSectionIdxWidth'(DimcSections - 1)) begin
+            dimc_section_d = '0;
+            if (dimc_row_q == dimc_row_limit - 1'b1) begin
+              dimc_row_d   = '0;
+	              dimc_state_d = dimc_active_cfg_q.feature_reuse
+	                                 ? DimcComputeIssue
+	                                 : DimcComputeInit;
+            end else begin
+              dimc_row_d = dimc_row_q + 1'b1;
+            end
+          end else begin
+            dimc_section_d = dimc_section_q + 1'b1;
+          end
+        end
+      end
+
+      DimcComputeInit: begin
+        if (dimc_init_count_q == DimcInitCountWidth'(DimcInitCycles - 1)) begin
+          dimc_init_count_d = '0;
+          dimc_state_d      = DimcComputeIssue;
+        end else begin
+          dimc_init_count_d = dimc_init_count_q + 1'b1;
+        end
+      end
+
+      DimcComputeIssue: begin
+        if (dimc_row_q == '0) begin
+          dimc_capture_count_d = '0;
+          dimc_result_d        = '{default: '0};
+        end
+        dimc_compute_fire = 1'b1;
+        dimc_compe = 1'b1;
+        dimc_ra    = {dimc_kernel_vreg, 2'b00};
+        dimc_rcsn  = 1'b0;
+        dimc_rcsn0 = 1'b0;
+        dimc_rcsn1 = 1'b0;
+        dimc_rcsn2 = 1'b0;
+        dimc_rcsn3 = 1'b0;
+        if (dimc_row_q == dimc_row_limit - 2 && !dimc_request_released_q) begin
+          dimc_instr_done = 1'b1;
+          dimc_request_released_d = 1'b1;
+        end
+        if (dimc_row_q == dimc_row_limit - 1'b1) begin
+          dimc_row_d                = '0;
+          dimc_state_d              = DimcIdle;
+          if (!dimc_capture_complete) begin
+            dimc_tail_pending_d       = 1'b1;
+            dimc_tail_id_d            = dimc_active_id_q;
+            dimc_tail_base_addr_d     = dimc_result_base_addr;
+            dimc_tail_first_word_d    = dimc_first_write_word;
+            dimc_tail_last_word_d     = dimc_last_write_word;
+            dimc_tail_row_limit_d     = dimc_row_limit;
+            dimc_tail_row_offset_d    = dimc_result_row_offset;
+            dimc_handoff_tail         = 1'b1;
+            dimc_instr_done           = !dimc_request_released_q;
+          end
+        end else begin
+          dimc_row_d = dimc_row_q + 1'b1;
+        end
+		      end
+
+      DimcWriteResult: begin
+	        if (dimc_wb_can_enqueue) begin
+	          dimc_wb_pending_d   = 1'b1;
+	          dimc_wb_id_d        = dimc_active_id_q;
+	          dimc_wb_base_addr_d = dimc_result_base_addr;
+	          dimc_wb_word_d      = dimc_first_write_word;
+	          dimc_wb_last_word_d = dimc_last_write_word;
+	          dimc_wb_result_d    = dimc_result_q;
+	          dimc_state_d        = DimcIdle;
+            dimc_instr_done     = !dimc_request_released_q;
+	        end
+	      end
+
+      default: dimc_state_d = DimcIdle;
+    endcase
+
+    if (dimc_capture_valid && (dimc_state_q == DimcComputeIssue || dimc_tail_pending_q)) begin
+      for (int unsigned word = 0; word < DimcResultWords; word++) begin
+        for (int unsigned slot = 0; slot < DimcResultsPerWord; slot++) begin
+          if (dimc_result_index == 5'(word * DimcResultsPerWord + slot)) begin
+            if (dimc_tail_pending_q) begin
+              dimc_tail_result_d[word][32*slot +: 32] = dimc_result_word;
+            end else begin
+              dimc_result_d[word][32*slot +: 32] = dimc_result_word;
+            end
+          end
+        end
+      end
+
+      if (dimc_capture_row == dimc_capture_row_limit - 1'b1) begin
+        if (dimc_tail_pending_q) begin
+          dimc_tail_capture_count_d = '0;
+        end else begin
+          dimc_capture_count_d = '0;
+        end
+        if (dimc_wb_can_enqueue) begin
+          dimc_wb_pending_d   = !dimc_wb_write_through_accept ||
+                                (dimc_capture_first_write_word !=
+                                 dimc_capture_last_write_word);
+          dimc_wb_id_d        = dimc_capture_id;
+          dimc_wb_base_addr_d = dimc_capture_base_addr;
+          dimc_wb_word_d      = dimc_wb_write_through_accept &&
+                                (dimc_capture_first_write_word !=
+                                 dimc_capture_last_write_word)
+                                  ? dimc_capture_first_write_word + 1'b1
+                                  : dimc_capture_first_write_word;
+          dimc_wb_last_word_d = dimc_capture_last_write_word;
+          dimc_wb_result_d    = dimc_tail_pending_q ? dimc_tail_result_d : dimc_result_d;
+          if (dimc_tail_pending_q) begin
+            dimc_tail_pending_d = 1'b0;
+          end else begin
+            dimc_state_d        = DimcIdle;
+            dimc_instr_done     = !dimc_request_released_q;
+          end
+        end else begin
+          if (dimc_tail_pending_q) begin
+            dimc_tail_pending_d      = 1'b0;
+            dimc_tail_done_pending_d = 1'b1;
+          end else begin
+            dimc_state_d             = DimcWriteResult;
+          end
+        end
+      end else begin
+        if (dimc_tail_pending_q) begin
+          dimc_tail_capture_count_d = dimc_tail_capture_count_q + 1'b1;
+        end else begin
+          dimc_capture_count_d = dimc_capture_count_q + 1'b1;
+        end
+      end
+    end
+
+    if (dimc_handoff_tail) begin
+      dimc_tail_capture_count_d = dimc_capture_count_d;
+      dimc_tail_result_d        = dimc_result_d;
+    end
+
+    if (dimc_start) begin
+      dimc_section_d = '0;
+      dimc_row_d = '0;
+      dimc_init_count_d = '0;
+      dimc_capture_count_d = '0;
+      dimc_request_released_d = 1'b0;
+      dimc_active_id_d  = dimc_req.id;
+      dimc_active_vs1_d = dimc_req.vs1;
+      dimc_active_vs2_d = dimc_req.vs2;
+      dimc_active_vd_d  = dimc_req.vd;
+      dimc_active_vl_d  = dimc_req.vl;
+      dimc_active_cfg_d = dimc_req.op_cfg.dimc;
+      // Do not clear dimc_result_d here: a turnover may be writing the old
+      // instruction's final word through to VRF in this same cycle. Row zero
+      // clears the accumulator when the next computation actually starts.
+      if (!dimc_req.op_cfg.dimc.feature_reuse)
+        dimc_state_d = DimcLoadFeature;
+      else if (dimc_req.op_cfg.dimc.kernel_load)
+        dimc_state_d = DimcLoadKernel;
+      else
+        dimc_state_d = DimcComputeIssue;
+    end
+  end : dimc_proc
 
   ///////////////////////
   //  Reduction logic  //
@@ -976,19 +1640,19 @@ module spatz_vfu
         word_issued = fu_can_accept && fu_word_can_advance;
 
         // Are we ready to accept a result?
-        result_ready = fu_word_complete && ((result_tag.wb && vfu_rsp_ready_i) || vrf_wvalid_i || (result_tag.is_cmp && !result_tag.last));
+        result_ready = !dimc_write_grant && fu_word_complete && ((result_tag.wb && vfu_rsp_ready_i) || vrf_wvalid_i || (result_tag.is_cmp && !result_tag.last));
 
         // Initialize the pointers
         reduction_pointer_d = '0;
 
         // Do we have a new reduction instruction?
-        if (spatz_req_valid && !running_q[spatz_req.id] && spatz_req.op_arith.is_reduction)
+        if (spatz_req_valid && !stall && !running_q[spatz_req.id] && spatz_req.op_arith.is_reduction)
            reduction_state_d = (!spatz_req.op_arith.vm) ? Reduction_Read_V0_t : (is_fpu_busy || divsqrt_inflight_q) ? Reduction_Wait : Reduction_Init;
       end
 
       Reduction_Wait: begin
         // Are we ready to accept a result?
-        result_ready = fu_word_complete && ((result_tag.wb && vfu_rsp_ready_i) || vrf_wvalid_i);
+        result_ready = !dimc_write_grant && fu_word_complete && ((result_tag.wb && vfu_rsp_ready_i) || vrf_wvalid_i);
 
         if (!is_fpu_busy)
           reduction_state_d = Reduction_Init;
@@ -1269,7 +1933,7 @@ module spatz_vfu
     vreg_addr_d = vreg_addr_q;
 
     vrf_raddr_o = vreg_addr_d;
-    vrf_waddr_o = vrf_addr_t'(result_tag.vd_addr);
+    vrf_waddr_o = dimc_write_grant ? dimc_write_addr : vrf_addr_t'(result_tag.vd_addr);
 
     // Tag (propagated with the operations)
     input_tag = '{
@@ -1337,6 +2001,12 @@ module spatz_vfu
         end
        default:;
    endcase
+    if (dimc_vrf_read_feature)
+      vrf_raddr_o[1] = dimc_feature_addr;
+    if (dimc_vrf_read_kernel)
+      vrf_raddr_o[0] = dimc_kernel_addr;
+    if (dimc_vrf_read_upper)
+      vrf_raddr_o[2] = dimc_upper_addr;
   end: vreg_addr_proc
 
   logic [VRFWordBWidth-1:0] tail_wbe;
@@ -1370,6 +2040,11 @@ module spatz_vfu
     if (reduction_state_q == Reduction_WriteBack && (result_valid[0] || result_buf_valid_q)) begin
       vreg_we = 1'b1;
     end
+    if (dimc_read_grant) vreg_r_req = '0;
+    if (dimc_vrf_read_feature) vreg_r_req[1] = 1'b1;
+    if (dimc_vrf_read_kernel) vreg_r_req[0] = 1'b1;
+    if (dimc_vrf_read_upper) vreg_r_req[2] = 1'b1;
+    if (dimc_write_grant) vreg_we = 1'b1;
   end : operand_req_proc
 
  // vreg_wbe logic
@@ -1401,9 +2076,9 @@ always_comb begin : vreg_wbe_proc
     end else
       tail_wbe_eff = tail_wbe;
 
-    if ((result_tag.last && fu_word_complete && (reduction_state_q inside {Reduction_NormalExecution, Reduction_Wait})) || reduction_done)
+    if ((result_tag.last && result_ready && fu_word_complete && (reduction_state_q inside {Reduction_NormalExecution, Reduction_Wait})) || reduction_done)
       vreg_wb_word_cnt_d = 0;
-    else if (fu_word_complete && (!result_tag.narrowing || result_tag.narrowing_upper))
+    else if (result_ready && fu_word_complete && (!result_tag.narrowing || result_tag.narrowing_upper))
       vreg_wb_word_cnt_d = vreg_wb_word_cnt_q + 1;
     // Got a new result
     if (fu_word_complete && !result_tag.reduction) begin
@@ -1463,6 +2138,7 @@ always_comb begin : vreg_wbe_proc
         default: if (MAXEW == EW_64) vreg_wbe = 8'hff;
       endcase
     end
+    if (dimc_write_grant) vreg_wbe = '1;
 end:vreg_wbe_proc
 
 logic vfcmp_result_accepted;
@@ -1549,7 +2225,8 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
   assign vrf_we_o    = vreg_we;
   assign vrf_wbe_o   = vreg_wbe;
   always_comb begin : vrf_wdata_proc
-    if (result_tag.is_cmp) begin
+    if (dimc_write_grant) vrf_wdata_o = dimc_write_data;
+    else if (result_tag.is_cmp) begin
       if(result_tag.vm)
         vrf_wdata_o = wdata_q | vreg_wdata;
       else
@@ -1558,8 +2235,14 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       vrf_wdata_o = vreg_wdata;
     end
   end
-  assign vrf_id_o    = {result_tag.id, {3{spatz_req.id}}};
-  assign vxsat_o = |(saturated & vreg_wbe) && vreg_we && !result_tag.reduction;
+  always_comb begin
+    vrf_id_o = {dimc_write_grant ? dimc_write_id : result_tag.id, {3{spatz_req.id}}};
+    if (dimc_vrf_read_kernel)  vrf_id_o[0] = dimc_active_id_q;
+    if (dimc_vrf_read_feature) vrf_id_o[1] = dimc_active_id_q;
+    if (dimc_vrf_read_upper)   vrf_id_o[2] = dimc_active_id_q;
+  end
+  assign vxsat_o = |(saturated & vreg_wbe) && vreg_we && vrf_wvalid_i &&
+                   !dimc_write_grant && !result_tag.reduction;
 
   //////////
   // IPUs //
@@ -1577,7 +2260,8 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
   logic                       int_ipu_result_ready;
   logic     [N_IPU-1:0]       int_ipu_busy;
 
-  assign is_ipu_busy = |int_ipu_busy;
+  // A serialized IPU can be idle while its assembled VRF word is still pending.
+  assign is_ipu_busy = |int_ipu_busy || |ipu_result_valid;
 
   logic [N_FU*ELEN-1:0] ipu_wide_operand1, ipu_wide_operand2, ipu_wide_operand3;
   always_comb begin: gen_ipu_widening
@@ -1639,6 +2323,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       // Maintain state
       ipu_result_d       = ipu_result_q;
       ipu_result_valid_d = ipu_result_valid_q;
+      ipu_saturated_d    = ipu_saturated_q;
       ipu_result_pnt_d   = ipu_result_pnt_q;
       ipu_operand_pnt_d  = ipu_operand_pnt_q;
       ipu_result_tag_d   = ipu_result_tag_q;
@@ -1668,7 +2353,10 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
 
       // Store results
       int_ipu_result_ready = '0;
-      if (&int_ipu_result_valid) begin
+      // Hold a completed word when DIMC or VRF backpressure occupies the
+      // write port. Do not overwrite its first slice with the next word.
+      if (&int_ipu_result_valid &&
+          (!(|ipu_result_valid_q[ipu_result_pnt_q*ELENB*N_IPU +: ELENB*N_IPU]) || result_ready)) begin
         ipu_result_d[ipu_result_pnt_q*ELEN*N_IPU +: ELEN*N_IPU]         = int_ipu_result;
         ipu_result_valid_d[ipu_result_pnt_q*ELENB*N_IPU +: ELENB*N_IPU] = int_ipu_result_valid;
         ipu_saturated_d[ipu_result_pnt_q*ELENB*N_IPU +: ELENB*N_IPU]    = int_ipu_saturated;
@@ -1677,7 +2365,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
         int_ipu_result_ready                                            = 1'b1;
 
         // Scalar operation
-        if (ipu_result_tag_d.wb || spatz_req.op_arith.is_reduction)
+        if (ipu_result_tag_d.wb || ipu_result_tag_d.reduction)
           ipu_result_pnt_d = '0;
       end
     end
@@ -1739,10 +2427,14 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
   ////////////
 
   if (FPU) begin: gen_fpu
-    logic [N_FPU*ELEN-1:0] wide_operand1, wide_operand2, wide_operand3;
+    logic [N_FPU*ELENB-1:0] lane_in_ready, lane_result_valid;
+    logic [N_FPU*ELEN-1:0] lane_operand1, lane_operand2, lane_operand3, lane_result;
+    vfu_tag_t [N_FPU-1:0] lane_result_tag;
+    logic lane_result_ready;
+    logic [N_FU*ELEN-1:0] wide_operand1, wide_operand2, wide_operand3;
     always_comb begin: gen_widening
-      automatic logic [N_FPU*ELEN/2-1:0] shift_operand1 = !widening_upper_q ? operand1[N_FPU*ELEN/2-1:0] : operand1[N_FPU*ELEN-1:N_FPU*ELEN/2];
-      automatic logic [N_FPU*ELEN/2-1:0] shift_operand2 = !widening_upper_q ? operand2[N_FPU*ELEN/2-1:0] : operand2[N_FPU*ELEN-1:N_FPU*ELEN/2];
+      automatic logic [N_FU*ELEN/2-1:0] shift_operand1 = !widening_upper_q ? operand1[N_FU*ELEN/2-1:0] : operand1[N_FU*ELEN-1:N_FU*ELEN/2];
+      automatic logic [N_FU*ELEN/2-1:0] shift_operand2 = !widening_upper_q ? operand2[N_FU*ELEN/2-1:0] : operand2[N_FU*ELEN-1:N_FU*ELEN/2];
 
       wide_operand1 = operand1;
       wide_operand2 = operand2;
@@ -1750,7 +2442,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
 
       case (spatz_req.vtype.vsew)
         EW_32: begin
-          for (int el = 0; el < N_FPU; el++) begin
+          for (int el = 0; el < N_FU; el++) begin
             if (spatz_req.op_arith.widen_vs1 && MAXEW == EW_64)
               wide_operand1[64*el +: 64] = widen_fp32_to_fp64(shift_operand1[32*el +: 32]);
 
@@ -1759,7 +2451,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
           end
         end
         EW_16: begin
-          for (int el = 0; el < (MAXEW == EW_64 ? 2*N_FPU : N_FPU); el++) begin
+          for (int el = 0; el < (MAXEW == EW_64 ? 2*N_FU : N_FU); el++) begin
             if (spatz_req.op_arith.widen_vs1)
               wide_operand1[32*el +: 32] = widen_fp16_to_fp32(shift_operand1[16*el +: 16]);
 
@@ -1768,7 +2460,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
           end
         end
         EW_8: begin
-          for (int el = 0; el < (MAXEW == EW_64 ? 4*N_FPU : 2*N_FPU); el++) begin
+          for (int el = 0; el < (MAXEW == EW_64 ? 4*N_FU : 2*N_FU); el++) begin
             if (spatz_req.op_arith.widen_vs1)
               wide_operand1[16*el +: 16] = widen_fp8_to_fp16(shift_operand1[8*el +: 8]);
 
@@ -1780,22 +2472,84 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       endcase
     end: gen_widening
 
+    if (N_FPU < N_FU) begin: gen_pipeline_fpu
+      logic [N_FU*ELEN-1:0] data_d, data_q;
+      logic [N_FU*ELENB-1:0] valid_d, valid_q;
+      logic [idx_width(N_FU/N_FPU)-1:0] input_pnt_d, input_pnt_q, output_pnt_d, output_pnt_q;
+      vfu_tag_t tag_d, tag_q;
+      `FF(data_q, data_d, '0)
+      `FF(valid_q, valid_d, '0)
+      `FF(input_pnt_q, input_pnt_d, '0)
+      `FF(output_pnt_q, output_pnt_d, '0)
+      `FF(tag_q, tag_d, '0)
+
+      always_comb begin
+        data_d = data_q;
+        valid_d = valid_q;
+        input_pnt_d = input_pnt_q;
+        output_pnt_d = output_pnt_q;
+        tag_d = tag_q;
+        fpu_in_ready = divsqrt_shared_active ? {N_FU{lane_in_ready[ELENB-1:0]}} : '0;
+        lane_operand1 = wide_operand1[input_pnt_q*N_FPU*ELEN +: N_FPU*ELEN];
+        lane_operand2 = wide_operand2[input_pnt_q*N_FPU*ELEN +: N_FPU*ELEN];
+        lane_operand3 = wide_operand3[input_pnt_q*N_FPU*ELEN +: N_FPU*ELEN];
+        if (!divsqrt_shared_active && spatz_req_valid && operands_ready && &lane_in_ready && is_fpu_insn) begin
+          input_pnt_d = input_pnt_q + 1'b1;
+          if (input_pnt_d == '0 || !(&valid_operations[input_pnt_d*N_FPU*ELENB +: N_FPU*ELENB]))
+            input_pnt_d = '0;
+          if (input_pnt_d == '0) fpu_in_ready = '1;
+        end
+
+        if (result_ready) begin
+          data_d = '0;
+          valid_d = '0;
+          tag_d = '0;
+        end
+        // Advertise space independently of valid, allowing the FPU collector
+        // to drain every lane, including short-latency exceptional results.
+        lane_result_ready = !divsqrt_shared_active &&
+            (!(|valid_q[output_pnt_q*N_FPU*ELENB +: N_FPU*ELENB]) || result_ready);
+        if (&lane_result_valid && lane_result_ready) begin
+          data_d[output_pnt_q*N_FPU*ELEN +: N_FPU*ELEN] = lane_result;
+          valid_d[output_pnt_q*N_FPU*ELENB +: N_FPU*ELENB] = lane_result_valid;
+          tag_d = lane_result_tag[0];
+          output_pnt_d = output_pnt_q + 1'b1;
+          if (tag_d.wb || tag_d.reduction) output_pnt_d = '0;
+        end
+      end
+      assign fpu_result = divsqrt_shared_active ? {{(N_FU-N_FPU)*ELEN{1'b0}}, lane_result} : data_q;
+      assign fpu_result_valid = divsqrt_shared_active ? {{(N_FU-N_FPU)*ELENB{1'b0}}, lane_result_valid} : valid_q;
+      assign fpu_result_tag = divsqrt_shared_active ? lane_result_tag[0] : tag_q;
+      assign fpu_gather_busy = |valid_q || input_pnt_q != '0;
+    end else begin: gen_no_pipeline_fpu
+      assign fpu_in_ready = lane_in_ready;
+      assign lane_operand1 = wide_operand1;
+      assign lane_operand2 = wide_operand2;
+      assign lane_operand3 = wide_operand3;
+      assign fpu_result = lane_result;
+      assign fpu_result_valid = lane_result_valid;
+      assign fpu_result_tag = lane_result_tag[0];
+      assign lane_result_ready = result_ready;
+      assign fpu_gather_busy = 1'b0;
+    end
+
     for (genvar fpu = 0; unsigned'(fpu) < N_FPU; fpu++) begin : gen_fpnew
       logic int_fpu_result_valid;
       logic int_fpu_in_ready;
       vfu_tag_t tag;
 
-      assign fpu_in_ready[fpu*ELENB +: ELENB]     = {ELENB{int_fpu_in_ready}};
-      assign fpu_result_valid[fpu*ELENB +: ELENB] = {ELENB{int_fpu_result_valid}};
+      assign lane_in_ready[fpu*ELENB +: ELENB]     = {ELENB{int_fpu_in_ready}};
+      assign lane_result_valid[fpu*ELENB +: ELENB] = {ELENB{int_fpu_result_valid}};
+      assign lane_result_tag[fpu] = tag;
 
       elen_t fpu_operand1, fpu_operand2, fpu_operand3;
 
       assign fpu_operand1 = (fpu == 0 && divsqrt_shared_active)
-        ? wide_operand1[divsqrt_slot_q*ELEN +: ELEN]: spatz_req.op_arith.switch_rs1_rd ? wide_operand3[fpu*ELEN +: ELEN] : wide_operand1[fpu*ELEN +: ELEN];
+        ? wide_operand1[divsqrt_slot_q*ELEN +: ELEN]: spatz_req.op_arith.switch_rs1_rd ? lane_operand3[fpu*ELEN +: ELEN] : lane_operand1[fpu*ELEN +: ELEN];
       assign fpu_operand2 = (fpu == 0 && divsqrt_shared_active)
-        ? wide_operand2[divsqrt_slot_q*ELEN +: ELEN]:wide_operand2[fpu*ELEN +: ELEN];
+        ? wide_operand2[divsqrt_slot_q*ELEN +: ELEN]:lane_operand2[fpu*ELEN +: ELEN];
 
-      assign fpu_operand3 = (fpu_op == fpnew_pkg::ADD || spatz_req.op_arith.switch_rs1_rd) ? wide_operand1[fpu*ELEN +: ELEN] : wide_operand3[fpu*ELEN +: ELEN];
+      assign fpu_operand3 = (fpu_op == fpnew_pkg::ADD || spatz_req.op_arith.switch_rs1_rd) ? lane_operand1[fpu*ELEN +: ELEN] : lane_operand3[fpu*ELEN +: ELEN];
 
       logic int_fpu_in_valid;
       assign int_fpu_in_valid = spatz_req_valid && operands_ready && (!spatz_req.op_arith.is_scalar || fpu == 0) && is_fpu_insn;
@@ -1811,6 +2565,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       vfu_tag_t input_tag_q;
       logic fpu_in_valid_q;
       logic fpu_in_ready_d;
+      assign fpu_stage_valid[fpu] = fpu_in_valid_q;
       logic int_fpu_in_valid_gated;
       logic fpu_result_ready;
 
@@ -1818,7 +2573,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
         && (fpu == 0 || !(divsqrt_shared_active))
         && !(fpu == 0 && divsqrt_shared_active && divsqrt_inflight_q);
 
-      assign fpu_result_ready = (fpu == 0 && divsqrt_shared_active)? divsqrt_shared_ready : result_ready;
+      assign fpu_result_ready = (fpu == 0 && divsqrt_shared_active)? divsqrt_shared_ready : lane_result_ready;
 
 
       `FFL(fpu_operand1_q, fpu_operand1, int_fpu_in_valid && int_fpu_in_ready, '0)
@@ -1849,7 +2604,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       ) i_fpu (
         .clk_i         (clk_i                                                  ),
         .rst_ni        (rst_ni                                                 ),
-        .hart_id_i     ({hart_id_i[31-$clog2(N_FPU):0], fpu[$clog2(N_FPU)-1:0]}),
+        .hart_id_i     ((hart_id_i << $clog2(N_FPU)) | 32'(fpu)),
         .flush_i       (1'b0                                                   ),
         .busy_o        (fpu_busy_d[fpu]                                        ),
         .operands_i    ({fpu_operand3_q, fpu_operand2_q, fpu_operand1_q}       ),
@@ -1865,18 +2620,17 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
         .tag_i         (input_tag_q                                            ),
         .simd_mask_i   ('1                                                     ),
         .rnd_mode_i    (rm_q                                                   ),
-        .result_o      (fpu_result[fpu*ELEN +: ELEN]                           ),
+        .result_o      (lane_result[fpu*ELEN +: ELEN]                          ),
         .out_valid_o   (int_fpu_result_valid                                   ),
         .out_ready_i   (fpu_result_ready                                       ),
         .status_o      (fpu_status_d[fpu]                                      ),
         .tag_o         (tag                                                    )
       );
 
-      if (fpu == 0) begin: gen_fpu_tag
-        assign fpu_result_tag = tag;
-      end: gen_fpu_tag
     end : gen_fpnew
   end: gen_fpu else begin: gen_no_fpu
+    assign fpu_stage_valid = '0;
+    assign fpu_gather_busy = 1'b0;
     assign is_fpu_busy      = 1'b0;
     assign fpu_in_ready     = '0;
     assign fpu_result       = '0;
@@ -1884,5 +2638,8 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
     assign fpu_result_tag   = '0;
     assign fpu_status_o     = '0;
   end: gen_no_fpu
+
+  if (DimcSectionWidth % VRFWordWidth != 0)
+    $error("[spatz_vfu] DIMC section width must be an integer multiple of VRF word width.");
 
 endmodule : spatz_vfu
