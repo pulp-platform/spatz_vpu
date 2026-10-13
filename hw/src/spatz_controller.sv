@@ -69,6 +69,10 @@ module spatz_controller
   logic       spatz_req_valid;
   logic       spatz_req_illegal;
 
+  // A vl=0 op retires with no response, so tracking it would never clear
+  logic spatz_req_tracked;
+  assign spatz_req_tracked = spatz_req.ex_unit != CON && (spatz_req.vl != '0 || spatz_req.op_arith.is_reduction);
+
   //////////
   // CSRs //
   //////////
@@ -449,7 +453,7 @@ module spatz_controller
     end
 
     // Initialize the scoreboard metadata if we have a new instruction issued.
-    if (spatz_req_valid && spatz_req.ex_unit != CON) begin
+    if (spatz_req_valid && spatz_req_tracked) begin
       // RAW hazard
       if (spatz_req.use_vs2) begin
         scoreboard_d[spatz_req.id].deps[write_table_d[spatz_req.vs2].id] |= write_table_d[spatz_req.vs2].valid;
@@ -608,9 +612,7 @@ module spatz_controller
     running_insn_d = running_insn_q;
 
     // New instruction!
-    // A vl=0 op retires with no response, so tracking it would never clear
-    if (spatz_req_valid && spatz_req.ex_unit != CON &&
-        (spatz_req.vl != '0 || spatz_req.op_arith.is_reduction))
+    if (spatz_req_valid && spatz_req_tracked)
       running_insn_d[next_insn_id] = 1'b1;
 
     // Finished a instruction
