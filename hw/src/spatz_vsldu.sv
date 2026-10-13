@@ -110,6 +110,8 @@ module spatz_vsldu
     vrf_addr_t waddr;
     vrf_data_t wdata;
     vrf_be_t wbe;
+    spatz_id_t id;
+    logic last;
   } vrf_req_t;
 
   vrf_req_t vrf_req_d, vrf_req_q;
@@ -134,6 +136,7 @@ module spatz_vsldu
   assign vrf_wbe_o       = vrf_req_q.wbe;
   assign vrf_we_o        = vrf_req_valid_q;
   assign vrf_id_o[0]     = spatz_req.id; // ID of the instruction currently reading elements
+  assign vrf_id_o[1]     = vrf_req_q.id; // ID of the instruction whose write is at the VRF port
   assign vrf_req_ready_q = vrf_wvalid_i;
 
   /////////////
@@ -151,10 +154,6 @@ module spatz_vsldu
   logic is_slide_up;
   assign is_slide_up = spatz_req.op == VSLIDEUP;
 
-  // Instruction currently committing results
-  spatz_id_t op_id_q, op_id_d;
-  `FF(op_id_q, op_id_d, '0)
-
   // Number of bytes we slide up or down
   vlen_t slide_amount_q, slide_amount_d;
   `FF(slide_amount_q, slide_amount_d, '0)
@@ -170,14 +169,6 @@ module spatz_vsldu
   // Currently running instructions
   logic [NrParallelInstructions-1:0] running_d, running_q;
   `FF(running_q, running_d, '0)
-
-  // Respond to controller if we are finished executing
-  typedef enum logic {
-    VSLDU_RUNNING,    // Running an instruction
-    VSLDU_WAIT_WVALID // Waiting for the last wvalid to acknowledge the instruction
-   } state_t;
-   state_t state_q, state_d;
-  `FF(state_q, state_d, VSLDU_RUNNING)
 
   // New instruction
   // Initialize the internal state one cycle in advance
@@ -254,8 +245,8 @@ module spatz_vsldu
   assign v0_t_lo_is_ready   = (vreg_operation_first_q == VREG_READ_V0_t_lo) && vrf_rvalid_i;
   assign v0_t_hi_is_ready   = (vreg_operation_first_q == VREG_READ_V0_t_hi) && vrf_rvalid_i;
 
-  `FFLARNC(v0_t_lo_read_done,1'b1,v0_t_lo_is_ready,vsldu_rsp_valid_o,1'b0,clk_i,rst_ni);
-  `FFLARNC(v0_t_hi_read_done,1'b1,v0_t_hi_is_ready,vsldu_rsp_valid_o,1'b0,clk_i,rst_ni);
+  `FFLARNC(v0_t_lo_read_done,1'b1,v0_t_lo_is_ready,vreg_operations_finished,1'b0,clk_i,rst_ni);
+  `FFLARNC(v0_t_hi_read_done,1'b1,v0_t_hi_is_ready,vreg_operations_finished,1'b0,clk_i,rst_ni);
 
   // v0 should be read from VRF
   vrf_data_t  operand_v0_t_lo,operand_v0_t_lo_q;
@@ -381,44 +372,9 @@ module spatz_vsldu
   end: vsldu_vreg_counter_proc
 
   always_comb begin: vsldu_rsp
-    // Maintain state
-    state_d = state_q;
-    op_id_d = op_id_q;
-
-    // Do not acknowledge anything
-    vsldu_rsp_valid_o = 1'b0;
+    vsldu_rsp_valid_o = vrf_req_valid_q && vrf_req_ready_q && vrf_req_q.last;
     vsldu_rsp_o       = '0;
-
-    // ID of the instruction currently writing elements
-    vrf_id_o[1] = spatz_req.id;
-
-    case (state_q)
-      VSLDU_RUNNING: begin
-        // Did we finish the execution of an instruction?
-        if (!is_vl_zero && vreg_operations_finished && spatz_req_valid) begin
-          op_id_d = spatz_req.id;
-          state_d = VSLDU_WAIT_WVALID;
-        end
-      end
-
-      VSLDU_WAIT_WVALID: begin
-        vrf_id_o[1] = op_id_q; // ID of the instruction currently writing to the VRF
-
-        if (vrf_wvalid_i) begin
-          vsldu_rsp_valid_o = 1'b1;
-          vsldu_rsp_o.id    = op_id_q;
-          state_d           = VSLDU_RUNNING;
-
-          // Did we finish *another* instruction?
-          if (!is_vl_zero && vreg_operations_finished && spatz_req_valid) begin
-            op_id_d = spatz_req.id;
-            state_d = VSLDU_WAIT_WVALID;
-          end
-        end
-      end // case: VSLDU_WAIT_WVALID
-
-      default:;
-    endcase
+    vsldu_rsp_o.id    = vrf_req_q.id;
   end: vsldu_rsp
 
   ////////////
@@ -555,6 +511,8 @@ module spatz_vsldu
     sld_offset_rd   = is_slide_up ? (prefetch_q ? -slide_amount_q[$bits(vlen_t)-1:$clog2(VRFWordBWidth)] - 1 : -slide_amount_q[$bits(vlen_t)-1:$clog2(VRFWordBWidth)]) : prefetch_q ? slide_amount_q[$bits(vlen_t)-1:$clog2(VRFWordBWidth)] : slide_amount_q[$bits(vlen_t)-1:$clog2(VRFWordBWidth)] + 1;
     vrf_raddr_o     = (vreg_operation_first_q == VREG_READ_V0_t_lo) ? '0 : (vreg_operation_first_q == VREG_READ_V0_t_hi) ? vrf_addr_t'(1) : base_raddr + vreg_counter_q[$bits(vlen_t)-1:$clog2(VRFWordBWidth)] + sld_offset_rd;
     vrf_req_d.waddr = base_waddr + vreg_counter_q[$bits(vlen_t)-1:$clog2(VRFWordBWidth)];
+    vrf_req_d.id    = spatz_req.id;
+    vrf_req_d.last  = vreg_operation_last && !is_vl_zero;
   end
 
 endmodule : spatz_vsldu
