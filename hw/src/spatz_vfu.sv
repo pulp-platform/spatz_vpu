@@ -1133,8 +1133,7 @@ assign vfcmp_result_accepted = (spatz_req.op == VFCMP) && &(result_valid | ~pend
     logic fpu_op_mode;
     logic fpu_vectorial_op;
 
-    logic [N_FPU-1:0] fpu_busy_d, fpu_busy_q;
-    `FF(fpu_busy_q, fpu_busy_d, '0)
+    logic [N_FPU-1:0] fpu_busy_d;
 
     status_t [N_FPU-1:0] fpu_status_d, fpu_status_q;
     `FF(fpu_status_q, fpu_status_d, '0)
@@ -1143,7 +1142,7 @@ assign vfcmp_result_accepted = (spatz_req.op == VFCMP) && &(result_valid | ~pend
       fpu_op           = fpnew_pkg::FMADD;
       fpu_op_mode      = 1'b0;
       fpu_vectorial_op = 1'b0;
-      is_fpu_busy      = |fpu_busy_q;
+      is_fpu_busy      = |fpu_busy_d;
       fpu_src_fmt      = fpnew_pkg::FP32;
       fpu_dst_fmt      = fpnew_pkg::FP32;
       fpu_int_fmt      = fpnew_pkg::INT32;
