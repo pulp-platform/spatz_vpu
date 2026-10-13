@@ -546,7 +546,8 @@ module spatz_vfu
     operand_state_d = operand_state_q;
       unique case(operand_state_q)
         READ_V0_t:
-          if(v0_t_is_ready) operand_state_d = (is_cmp_req && spatz_req.vtype.vma == 0) ? READ_VD_t : READ_OPERANDS;
+          // Masked compares always keep inactive mask bits undisturbed, which is also valid for vma=1
+          if(v0_t_is_ready) operand_state_d = is_cmp_req ? READ_VD_t : READ_OPERANDS;
           else operand_state_d = operand_state_q;
         READ_VD_t:
           operand_state_d = vd_t_is_ready ? READ_OPERANDS : READ_VD_t;
@@ -653,9 +654,9 @@ module spatz_vfu
   logic [VLEN-1:0] cmp_mask_dst_q;
   assign cmp_mask_dst_q = {cmp_mask_dst_hi_q, cmp_mask_dst_lo_q};
 
-  // Inactive elements are set to 1 under ma and left undisturbed under mu
+  // Inactive elements are left undisturbed (allowed under both ma and mu)
   logic [VLEN-1:0] cmp_dst_inactive;
-  assign cmp_dst_inactive = result_tag.vma ? '1 : cmp_mask_dst_q;
+  assign cmp_dst_inactive = cmp_mask_dst_q;
 
   ///////////////////////
   //  Reduction logic  //
