@@ -373,8 +373,7 @@ module spatz_vfu
     }
   };
 
-  logic [N_FPU-1:0] fpu_busy_d, fpu_busy_q;
-  `FF(fpu_busy_q, fpu_busy_d, '0)
+  logic [N_FPU-1:0] fpu_busy_d;
 
   // Registered per lane in gen_fpnew below, gated on that lane's own `spatz_fpu_rsp.p_valid`.
   status_t [N_FPU-1:0] fpu_status_q;
@@ -385,7 +384,7 @@ module spatz_vfu
       fpu_vectorial_op = 1'b0;
       fpu_pace_mode    = '0;
       fpu_pace_mode.degree = pace_mode_i.degree;
-      is_fpu_busy      = |fpu_busy_q;
+      is_fpu_busy      = |fpu_busy_d;
       fpu_src_fmt      = fpnew_pkg::FP32;
       fpu_dst_fmt      = fpnew_pkg::FP32;
       fpu_int_fmt      = fpnew_pkg::INT32;
