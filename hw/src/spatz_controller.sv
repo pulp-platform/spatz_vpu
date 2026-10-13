@@ -651,32 +651,34 @@ module spatz_controller
       case (decoder_rsp.spatz_req.ex_unit)
         CON: begin
           issue_rsp_o.writeback = spatz_req.use_rd;
-        end // CON
+        end
         VFU: begin
           // Scalar FP ops use the VFU path but do not depend on the vector vtype CSR.
           if (vtype_q.vill && !decoder_rsp.spatz_req.op_arith.is_scalar) begin
             issue_rsp_o.accept = 1'b0;
+            issue_rsp_o.exception = 1'b1;
           end
-        end // VFU
+        end
         LSU: begin
           issue_rsp_o.loadstore = 1'b1;
-          // vtype is illegal -> illegal instruction
           if (vtype_q.vill) begin
             issue_rsp_o.accept = 1'b0;
+            issue_rsp_o.exception = 1'b1;
           end
-        end // LSU
+        end
         SLD: begin
-          // vtype is illegal -> illegal instruction
           if (vtype_q.vill) begin
             issue_rsp_o.accept = 1'b0;
+            issue_rsp_o.exception = 1'b1;
           end
-        end // SLD
+        end
         default:;
       endcase // Operation type
     // The decoding resulted in an illegal instruction
     end else if (decoder_rsp_valid && decoder_rsp.instr_illegal) begin
       // Do not accept it
       issue_rsp_o.accept = 1'b0;
+      issue_rsp_o.exception = 1'b1;
     end
   end // acc_issue_resp
 
