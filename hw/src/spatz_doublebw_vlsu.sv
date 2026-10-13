@@ -56,7 +56,9 @@ module spatz_doublebw_vlsu
     input  logic           [NrMemPorts-1:0] spatz_mem_rsp_valid_i,
     // Memory Finished
     output logic                            spatz_mem_finished_o,
-    output logic                            spatz_mem_str_finished_o
+    output logic                            spatz_mem_str_finished_o,
+    // High when every store sent to memory has been acknowledged (used by fences)
+    output logic                            spatz_st_rsp_done_o
   );
 
 // Include FF
@@ -590,6 +592,8 @@ module spatz_doublebw_vlsu
   // for the case with more than one memory port)
   assign spatz_mem_finished_o     = commit_insn_valid && &(commit_finished_q | (commit_finished_d & commit_counter_en)) && mem_insn_finished_q[commit_insn_q.id];
   assign spatz_mem_str_finished_o = commit_insn_valid && &(commit_finished_q | (commit_finished_d & commit_counter_en)) && mem_insn_finished_q[commit_insn_q.id] && !commit_insn_q.is_load;
+  // spatz_mem_str_finished_o can pulse before the last store is acknowledged
+  assign spatz_st_rsp_done_o      = (store_count_q == '0) && !write_pending;
 
   // Do we start at the very fist element
   logic mem_is_vstart_zero;
