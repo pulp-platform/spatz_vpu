@@ -147,6 +147,9 @@ module spatz_vlsu
   } state_t;
   state_t state_d, state_q;
   `FF(state_q, state_d, VLSU_RunningLoad)
+  // State to return to after reading v0, so the load/store switch keeps its checks
+  state_t v0_t_ret_d, v0_t_ret_q;
+  `FF(v0_t_ret_q, v0_t_ret_d, VLSU_RunningLoad)
 
 
   id_t [NrMemPorts-1:0] store_count_q;
@@ -900,12 +903,8 @@ module spatz_vlsu
       end
 
       VLSU_ReadingV0_t:
-        if(v0_t_is_ready & ~v0_t_is_ready_q) begin
-          state_d = VLSU_RunningLoad;
-          if (commit_insn_valid && !commit_insn_q.is_load)
-            state_d = VLSU_RunningStore;
-        end
-        else state_d = state_q;
+        if(v0_t_is_ready & ~v0_t_is_ready_q)
+          state_d = v0_t_ret_q;
 
       VLSU_RunningStore: begin
         if(commit_insn_valid && !commit_insn_q.vm && !v0_t_read_done)
@@ -918,6 +917,10 @@ module spatz_vlsu
 
       default:;
     endcase
+
+    v0_t_ret_d = v0_t_ret_q;
+    if (state_q != VLSU_ReadingV0_t && state_d == VLSU_ReadingV0_t)
+      v0_t_ret_d = state_q;
   end: p_state
 
   //////////////////////////
