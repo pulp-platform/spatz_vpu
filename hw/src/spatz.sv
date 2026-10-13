@@ -301,7 +301,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     // Non-writeback instructions: also require x_result to be ready, since
     // the synthesized result must be consumed atomically with the issue.
     issue_proceed       = acc_issue_rsp_top.writeback | x_result_ready_i;
-    acc_issue_valid_top = combined_issue_valid;
+    // Feed the controller only when Snitch also sees the handshake, or the instruction runs twice
+    acc_issue_valid_top = combined_issue_valid & issue_proceed;
     // Must also gate ready on rs_valid, not just combined_issue_valid: Snitch
     // reads x_issue_ready_o/x_register_ready_o to decide whether this
     // instruction was accepted. Asserting ready while silently not feeding
