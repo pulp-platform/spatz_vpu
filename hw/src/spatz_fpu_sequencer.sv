@@ -537,7 +537,8 @@ module spatz_fpu_sequencer
       // visibility into this — it always returns writeback=0 for these ops.
       // Override so that Snitch waits for the actual result rather than synthesizing
       // a zero-result immediately via synth_result_valid.
-      issue_rsp_o.writeback = issue_rsp_i.writeback | use_rd;
+      // Results going to the FPR (vfmv.f.s) are not written back to Snitch
+      issue_rsp_o.writeback = (issue_rsp_i.writeback && !use_fd) | use_rd;
     end else
       issue_rsp_o = spatz_issue_rsp_t'{
         // We should accept if not illegal instruction instead

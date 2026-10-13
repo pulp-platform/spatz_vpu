@@ -654,6 +654,8 @@ module spatz_controller
           issue_rsp_o.writeback = decoder_rsp.spatz_req.use_rd;
         end
         VFU: begin
+          // Scalar results such as vmv.x.s are written back to the core
+          issue_rsp_o.writeback = decoder_rsp.spatz_req.use_rd;
           // Scalar FP ops use the VFU path but do not depend on the vector vtype CSR.
           if (vtype_q.vill && !decoder_rsp.spatz_req.op_arith.is_scalar) begin
             issue_rsp_o.accept = 1'b0;
