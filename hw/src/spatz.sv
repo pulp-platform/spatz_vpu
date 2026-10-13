@@ -271,8 +271,9 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     // x_result_i.id.
     acc_issue_req_top.id        = {1'b0, x_issue_req_i.instr[11:7]};
     acc_issue_req_top.data_op   = x_issue_req_i.instr;
-    acc_issue_req_top.data_arga = x_register_i.rs[0];
-    acc_issue_req_top.data_argb = x_register_i.rs[1];
+    // Sign-extend scalar operands to ELEN, as Snitch's accelerator interface does
+    acc_issue_req_top.data_arga = data_t'($signed(x_register_i.rs[0]));
+    acc_issue_req_top.data_argb = data_t'($signed(x_register_i.rs[1]));
     acc_issue_req_top.data_argc = x_register_i.rs[2];
     // acc_issue_req_top.addr is unused: Spatz is the only unit on the iface.
 
