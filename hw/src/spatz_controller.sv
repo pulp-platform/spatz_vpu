@@ -650,7 +650,8 @@ module spatz_controller
 
       case (decoder_rsp.spatz_req.ex_unit)
         CON: begin
-          issue_rsp_o.writeback = spatz_req.use_rd;
+          // The instruction being issued, not the one currently leaving the request buffer
+          issue_rsp_o.writeback = decoder_rsp.spatz_req.use_rd;
         end
         VFU: begin
           // Scalar FP ops use the VFU path but do not depend on the vector vtype CSR.
