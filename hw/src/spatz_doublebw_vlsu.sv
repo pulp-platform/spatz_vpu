@@ -91,13 +91,19 @@ module spatz_doublebw_vlsu
 
   logic spatz_req_ready;
 
+  // A vl=0 operation accesses no memory and the controller expects no response for it.
+  // It is also not tracked by the controller, so it can share its ID with the next
+  // operation: keep it out of the queue and only report it as finished.
+  logic spatz_req_is_vl0;
+  assign spatz_req_is_vl0 = spatz_req_i.vl == '0;
+
   spill_register #(
     .T(spatz_req_t)
   ) i_operation_queue (
     .clk_i  (clk_i                                          ),
     .rst_ni (rst_ni                                         ),
     .data_i (spatz_req_d                                    ),
-    .valid_i(spatz_req_valid_i && spatz_req_i.ex_unit == LSU),
+    .valid_i(spatz_req_valid_i && spatz_req_i.ex_unit == LSU && !spatz_req_is_vl0),
     .ready_o(spatz_req_ready                                ),
     .data_o (mem_spatz_req                                  ),
     .valid_o(mem_spatz_req_valid                            ),
@@ -590,7 +596,22 @@ module spatz_doublebw_vlsu
 
   // Signal when we are finished with with accessing the memory (necessary
   // for the case with more than one memory port)
-  assign spatz_mem_finished_o     = commit_insn_valid && &(commit_finished_q | (commit_finished_d & commit_counter_en)) && mem_insn_finished_q[commit_insn_q.id];
+  logic mem_finished;
+  assign mem_finished = commit_insn_valid && &(commit_finished_q | (commit_finished_d & commit_counter_en)) && mem_insn_finished_q[commit_insn_q.id];
+
+  // Same width as the core's count of outstanding memory operations, which caps them at 7
+  logic [2:0] vl0_finished_q, vl0_finished_d;
+  `FF(vl0_finished_q, vl0_finished_d, '0)
+
+  always_comb begin: proc_vl0_finished
+    vl0_finished_d = vl0_finished_q;
+    if (spatz_req_valid_i && spatz_req_i.ex_unit == LSU && spatz_req_is_vl0 && spatz_req_ready_o)
+      vl0_finished_d++;
+    if (!mem_finished && vl0_finished_q != '0)
+      vl0_finished_d--;
+  end: proc_vl0_finished
+
+  assign spatz_mem_finished_o     = mem_finished || vl0_finished_q != '0;
   assign spatz_mem_str_finished_o = commit_insn_valid && &(commit_finished_q | (commit_finished_d & commit_counter_en)) && mem_insn_finished_q[commit_insn_q.id] && !commit_insn_q.is_load;
   // spatz_mem_str_finished_o can pulse before the last store is acknowledged
   assign spatz_st_rsp_done_o      = (store_count_q == '0) && !write_pending;
