@@ -274,6 +274,14 @@ module spatz_decoder
         riscv_instr::VREDMINU_VS,
         riscv_instr::VREDMAX_VS,
         riscv_instr::VREDMAXU_VS,
+        riscv_instr::VMANDN_MM,
+        riscv_instr::VMAND_MM,
+        riscv_instr::VMOR_MM,
+        riscv_instr::VMXOR_MM,
+        riscv_instr::VMORN_MM,
+        riscv_instr::VMNAND_MM,
+        riscv_instr::VMNOR_MM,
+        riscv_instr::VMXNOR_MM,
         riscv_instr::VMSEQ_VV,
         riscv_instr::VMSEQ_VX,
         riscv_instr::VMSEQ_VI,
@@ -827,6 +835,38 @@ module spatz_decoder
               if (func3 == OPIVI) begin
                 spatz_req.rs1 = elen_t'(arith_s1);
               end
+            end
+
+            riscv_instr::VMANDN_MM: begin
+              spatz_req.op = VMANDNOT;
+            end
+
+            riscv_instr::VMAND_MM: begin
+              spatz_req.op = VMAND;
+            end
+
+            riscv_instr::VMOR_MM: begin
+              spatz_req.op = VMOR;
+            end
+
+            riscv_instr::VMXOR_MM: begin
+              spatz_req.op = VMXOR;
+            end
+
+          riscv_instr::VMORN_MM: begin
+              spatz_req.op = VMORNOT;
+            end
+
+          riscv_instr::VMNAND_MM: begin
+              spatz_req.op = VMNAND;
+            end
+
+          riscv_instr::VMNOR_MM: begin
+              spatz_req.op = VMNOR;
+            end
+
+          riscv_instr::VMXNOR_MM: begin
+              spatz_req.op = VMXNOR;
             end
 
             default: illegal_instr = 1'b1;
