@@ -71,6 +71,8 @@ module spatz_vfu
     vlen_t vl;
     // Is this instruction unmasked?
     logic vm;
+    // Is this instruction mask agnostic?
+    logic vma;
     // Is this merge instruction?
     logic is_merge;
     // valid bytes in this VRF word
@@ -138,8 +140,8 @@ module spatz_vfu
   // Do we have the reduction operand?
   logic reduction_operand_ready_d, reduction_operand_ready_q;
 
-  typedef enum logic{
-    READ_OPERANDS, READ_V0_t
+  typedef enum logic [1:0]{
+    READ_OPERANDS, READ_V0_t, READ_VD_t
   } operand_state_t;
    operand_state_t operand_state_d, operand_state_q;
   `FF(operand_state_q, operand_state_d, READ_OPERANDS)
@@ -508,9 +510,19 @@ module spatz_vfu
   logic [VLEN-1:0] reduction_operand_v0_t_q;
   assign reduction_operand_v0_t_q = {reduction_operand_v0_t_hi_q, reduction_operand_v0_t_lo_q};
 
+  // FF to back up the mask destination register for comparison instructions
+  logic [N_FU*ELEN-1:0] cmp_mask_dst_lo, cmp_mask_dst_lo_q;
+  logic [N_FU*ELEN-1:0] cmp_mask_dst_hi, cmp_mask_dst_hi_q;
+
+  // The signal to choose comparison instructions
+  logic is_cmp_req;
+  assign is_cmp_req = (spatz_req.op == VFCMP) || spatz_req.op inside {VMSEQ, VMSNE, VMSLT, VMSLTU, VMSLE, VMSLEU, VMSGT, VMSGTU};
+
   // FSM to manage operands between normal calculation and v0.t fetching
   logic v0_t_is_ready;
   assign v0_t_is_ready   = (operand_state_q == READ_V0_t) && vrf_rvalid_i[0] && vrf_rvalid_i[1];
+  logic vd_t_is_ready;
+  assign vd_t_is_ready   = (operand_state_q == READ_VD_t) && vrf_rvalid_i[0] && vrf_rvalid_i[1];
   logic v0_t_read_done;
   logic v0_t_read_done_d;
   always_comb begin
@@ -534,8 +546,10 @@ module spatz_vfu
     operand_state_d = operand_state_q;
       unique case(operand_state_q)
         READ_V0_t:
-          if(v0_t_is_ready) operand_state_d = READ_OPERANDS;
+          if(v0_t_is_ready) operand_state_d = (is_cmp_req && spatz_req.vtype.vma == 0) ? READ_VD_t : READ_OPERANDS;
           else operand_state_d = operand_state_q;
+        READ_VD_t:
+          operand_state_d = vd_t_is_ready ? READ_OPERANDS : READ_VD_t;
         READ_OPERANDS:
           operand_state_d = switch_to_read_v0t ? READ_V0_t : READ_OPERANDS;
         default: operand_state_d = operand_state_q;
@@ -550,6 +564,8 @@ module spatz_vfu
     reduction_operand_v0_t_hi = '0;
     operand_v0_t_lo = '0;
     operand_v0_t_hi = '0;
+    cmp_mask_dst_lo = '0;
+    cmp_mask_dst_hi = '0;
     operand1 = '0;
     operand2 = '0;
     case (operand_state_q)
@@ -592,6 +608,10 @@ module spatz_vfu
         operand_v0_t_lo = vrf_rdata_i[0];
         operand_v0_t_hi = vrf_rdata_i[1];
       end
+      READ_VD_t: begin
+        cmp_mask_dst_lo = vrf_rdata_i[0];
+        cmp_mask_dst_hi = vrf_rdata_i[1];
+      end
       default:;
     endcase
     operand3 = spatz_req.op_arith.is_scalar ? {1*N_FU{spatz_req.rsd}} : vrf_rdata_masked[2]; // VFU_VD_RD // operand3 is used in MAC computation, like VMADD
@@ -625,9 +645,17 @@ module spatz_vfu
 
   `FFL(operand_v0_t_lo_q, operand_v0_t_lo, v0_t_is_ready, '0)
   `FFL(operand_v0_t_hi_q, operand_v0_t_hi, v0_t_is_ready, '0)
+  `FFL(cmp_mask_dst_lo_q, cmp_mask_dst_lo, vd_t_is_ready, '0)
+  `FFL(cmp_mask_dst_hi_q, cmp_mask_dst_hi, vd_t_is_ready, '0)
 
   logic [VLEN-1:0] operand_v0_t_q;
-  assign operand_v0_t_q = {operand_v0_t_hi_q,operand_v0_t_lo_q};
+  assign operand_v0_t_q = {operand_v0_t_hi_q, operand_v0_t_lo_q};
+  logic [VLEN-1:0] cmp_mask_dst_q;
+  assign cmp_mask_dst_q = {cmp_mask_dst_hi_q, cmp_mask_dst_lo_q};
+
+  // Inactive elements are set to 1 under ma and left undisturbed under mu
+  logic [VLEN-1:0] cmp_dst_inactive;
+  assign cmp_dst_inactive = result_tag.vma ? '1 : cmp_mask_dst_q;
 
   ///////////////////////
   //  Reduction logic  //
@@ -1108,10 +1136,6 @@ module spatz_vfu
   vrf_addr_t [2:0] vreg_addr_q, vreg_addr_d;
   `FF(vreg_addr_q, vreg_addr_d, '0)
 
-  // The signal to choose comparison instructions
-  logic is_cmp_req;
-  assign is_cmp_req = (spatz_req.op == VFCMP) || spatz_req.op inside {VMSEQ, VMSNE, VMSLT, VMSLTU, VMSLE, VMSLEU, VMSGT, VMSGTU};
-
   // Calculate new vector register address
   always_comb begin : vreg_addr_proc
     vreg_addr_d = vreg_addr_q;
@@ -1133,6 +1157,7 @@ module spatz_vfu
       is_cmp         : is_cmp_req,
       vl             : spatz_req.vl,
       vm             : spatz_req.op_arith.vm,
+      vma            : spatz_req.vtype.vma,
       is_merge       : (spatz_req.op == VMERGE),
       valid_bytes    : valid_bytes_wr // count of the number of valid bytes in the VRF word (write side)
     };
@@ -1177,6 +1202,11 @@ module spatz_vfu
          vreg_addr_d[1] = ( 1 + vstart) << $clog2(NrWordsPerVector);
          vrf_raddr_o = vreg_addr_d;
        end
+       READ_VD_t: begin
+          vreg_addr_d[0] = spatz_req.vd << $clog2(NrWordsPerVector);
+          vreg_addr_d[1] = (spatz_req.vd << $clog2(NrWordsPerVector)) + 1;
+          vrf_raddr_o = vreg_addr_d;
+        end
        default:;
    endcase
   end: vreg_addr_proc
@@ -1188,6 +1218,7 @@ module spatz_vfu
 
     unique case(operand_state_q)
       READ_V0_t: vreg_r_req = 3'b011;
+      READ_VD_t: vreg_r_req = 3'b011;
       READ_OPERANDS: begin
         if (switch_to_read_v0t) begin
           vreg_r_req = '0;  // avoid unuseful read
@@ -1389,7 +1420,16 @@ assign vfcmp_result_accepted = result_tag.is_cmp && &(result_valid | ~pending_re
   assign vrf_re_o    = vreg_r_req;
   assign vrf_we_o    = vreg_we;
   assign vrf_wbe_o   = vreg_wbe;
-  assign vrf_wdata_o = result_tag.is_cmp ? (wdata_q | vreg_wdata) : vreg_wdata;
+  always_comb begin : vrf_wdata_proc
+    if (result_tag.is_cmp) begin
+      if(result_tag.vm)
+        vrf_wdata_o = wdata_q | vreg_wdata;
+      else
+        vrf_wdata_o = ((wdata_q | vreg_wdata) & operand_v0_t_q) | (cmp_dst_inactive & ~operand_v0_t_q);
+    end else begin
+      vrf_wdata_o = vreg_wdata;
+    end
+  end
   assign vrf_id_o    = {result_tag.id, {3{spatz_req.id}}};
 
   //////////
