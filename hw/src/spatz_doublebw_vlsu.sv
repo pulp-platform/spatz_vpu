@@ -602,17 +602,27 @@ module spatz_doublebw_vlsu
   // Same width as the core's count of outstanding memory operations, which caps them at 7
   logic [2:0] vl0_finished_q, vl0_finished_d;
   `FF(vl0_finished_q, vl0_finished_d, '0)
+  // The stores among them, which also report spatz_mem_str_finished_o
+  logic [2:0] vl0_str_finished_q, vl0_str_finished_d;
+  `FF(vl0_str_finished_q, vl0_str_finished_d, '0)
 
   always_comb begin: proc_vl0_finished
-    vl0_finished_d = vl0_finished_q;
-    if (spatz_req_valid_i && spatz_req_i.ex_unit == LSU && spatz_req_is_vl0 && spatz_req_ready_o)
+    vl0_finished_d     = vl0_finished_q;
+    vl0_str_finished_d = vl0_str_finished_q;
+    if (spatz_req_valid_i && spatz_req_i.ex_unit == LSU && spatz_req_is_vl0 && spatz_req_ready_o) begin
       vl0_finished_d++;
-    if (!mem_finished && vl0_finished_q != '0)
+      if (!spatz_req_i.op_mem.is_load) vl0_str_finished_d++;
+    end
+    // Report the stores first
+    if (!mem_finished && vl0_finished_q != '0) begin
       vl0_finished_d--;
+      if (vl0_str_finished_q != '0) vl0_str_finished_d--;
+    end
   end: proc_vl0_finished
 
   assign spatz_mem_finished_o     = mem_finished || vl0_finished_q != '0;
-  assign spatz_mem_str_finished_o = commit_insn_valid && &(commit_finished_q | (commit_finished_d & commit_counter_en)) && mem_insn_finished_q[commit_insn_q.id] && !commit_insn_q.is_load;
+  assign spatz_mem_str_finished_o = (commit_insn_valid && &(commit_finished_q | (commit_finished_d & commit_counter_en)) && mem_insn_finished_q[commit_insn_q.id] && !commit_insn_q.is_load) ||
+                                    (!mem_finished && vl0_str_finished_q != '0);
   // spatz_mem_str_finished_o can pulse before the last store is acknowledged
   assign spatz_st_rsp_done_o      = (store_count_q == '0) && !write_pending;
 
