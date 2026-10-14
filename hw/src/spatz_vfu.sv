@@ -390,6 +390,14 @@ module spatz_vfu
       if (spatz_req.op_arith.is_scalar) begin
         fpu_vectorial_op = 1'b0;
         fpu_int_fmt      = fpnew_pkg::INT32;
+        // A widening fcvt converts from the SEW format (no pre-widened operand)
+        if (spatz_req.op_arith.widen_vs1)
+          unique case (spatz_req.vtype.vsew)
+            EW_32:   fpu_src_fmt = fpnew_pkg::FP32;
+            EW_16:   fpu_src_fmt = spatz_req.fm.src ? fpnew_pkg::FP16ALT : fpnew_pkg::FP16;
+            EW_8:    fpu_src_fmt = spatz_req.fm.src ? fpnew_pkg::FP8ALT : fpnew_pkg::FP8;
+            default:;
+          endcase
       end
 
       unique case (spatz_req.op)
@@ -1157,8 +1165,10 @@ module spatz_vfu
     // Tag (propagated with the operations)
     input_tag = '{
       id             : spatz_req.id,
-      // Scalar fcvt.w*/fclass write a 32-bit integer, not a SEW-wide element
-      vsew           : spatz_req.op_arith.is_scalar && spatz_req.op inside {VF2I, VF2U, VFCLASS} ? EW_32 : spatz_req.vtype.vsew,
+      // Scalar fcvt.w*/fclass write a 32-bit integer and a widening fcvt a 2*SEW value
+      vsew           : spatz_req.op_arith.is_scalar && spatz_req.op inside {VF2I, VF2U, VFCLASS} ? EW_32 :
+                       spatz_req.op_arith.is_scalar && spatz_req.op_arith.widen_vs1 ? vew_e'(spatz_req.vtype.vsew + 1) :
+                       spatz_req.vtype.vsew,
       vstart         : spatz_req.vstart,
       vd_addr        : spatz_req.op_arith.is_scalar ? vfu_rsp_addr_t'(spatz_req.rd) : vfu_rsp_addr_t'(vreg_addr_q[2]),
       wb             : spatz_req.op_arith.is_scalar,
@@ -1642,6 +1652,8 @@ assign vfcmp_result_accepted = result_tag.is_cmp && &(result_valid | ~pending_re
       wide_operand2 = operand2;
       wide_operand3 = operand3;
 
+      // A scalar widening fcvt converts its NaN-boxed operand in the FPU instead
+      if (!spatz_req.op_arith.is_scalar)
       case (spatz_req.vtype.vsew)
         EW_32: begin
           for (int el = 0; el < N_FPU; el++) begin
