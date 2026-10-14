@@ -135,6 +135,17 @@ module spatz_doublebw_vlsu
     endcase
   end: proc_spatz_req
 
+  // Interface 1 handles the vector from half of it rounded up to SpatzMemBytes, interface 0
+  // everything before, so interface 0 never has fewer VRF words than interface 1
+  function automatic vlen_t vlsu_intf_half(vlen_t vl);
+    return ((vl + SpatzMemBytes - 1) >> $clog2(SpatzMemBytes) << $clog2(SpatzMemBytes)) >> 1;
+  endfunction
+
+  function automatic vlen_t vlsu_intf_bytes(vlen_t vl, int unsigned intf);
+    automatic vlen_t intf0_bytes = (vl < vlsu_intf_half(vl)) ? vl : vlsu_intf_half(vl);
+    return (intf == 0) ? intf0_bytes : vl - intf0_bytes;
+  endfunction
+
   // Do we have a strided memory access
   logic mem_is_strided;
   assign mem_is_strided = mem_spatz_req_valid && ((mem_spatz_req.op == VLSE) || (mem_spatz_req.op == VSSE));
@@ -515,7 +526,7 @@ module spatz_doublebw_vlsu
         // such that they access different superbanks.
         if (!mem_is_indexed && intf == 1) begin
           // Align the vector length with SpatzMemBytes bytes
-          offset += ((mem_spatz_req.vl +  (SpatzMemBytes / 2)) >> $clog2(SpatzMemBytes) << $clog2(SpatzMemBytes)) / 2;
+          offset += vlsu_intf_half(mem_spatz_req.vl);
         end
         offset *= stride;
 
@@ -554,8 +565,8 @@ module spatz_doublebw_vlsu
 
       // The second interface starts from half of the vector to straighten the write-back VRF access pattern
       if (intf == 1) begin
-        vd_vreg_addr[intf] += (commit_insn_q.vl + (SpatzMemBytes / 2)) >> $clog2(SpatzMemBytes);
-        vs2_vreg_idx_addr[intf] += ((((mem_spatz_req.vl + (SpatzMemBytes / 2)) >> $clog2(SpatzMemBytes) << $clog2(SpatzMemBytes)) / 2)
+        vd_vreg_addr[intf] += vlsu_intf_half(commit_insn_q.vl) >> $clog2(VRFWordBWidth);
+        vs2_vreg_idx_addr[intf] += (vlsu_intf_half(mem_spatz_req.vl)
                                    >> (mem_spatz_req.vtype.vsew - int'(mem_spatz_req.op_mem.ew))) / VRFWordBWidth;
       end
     end
@@ -897,17 +908,16 @@ module spatz_doublebw_vlsu
       localparam int unsigned port = intf * N_FU + fu;
 
       // The total amount of vector bytes we have to work through
-      vlen_t max_bytes;
+      vlen_t max_bytes, intf_bytes;
 
       always_comb begin
-        // Default value
-        max_bytes = (commit_insn_q.vl >> $clog2(SpatzMemBytes)) << $clog2(ELENB);
-
-        // Full transfer
-        if (commit_insn_q.vl[$clog2(ELENB) +: $clog2(NrMemPorts)] > port)
+        // This interface's share of the vector, spread over its ports
+        intf_bytes = vlsu_intf_bytes(commit_insn_q.vl, intf);
+        max_bytes  = (intf_bytes >> $clog2(N_FU*ELENB)) << $clog2(ELENB);
+        if (intf_bytes[$clog2(ELENB) +: $clog2(N_FU)] > fu)
           max_bytes += ELENB;
-        else if (commit_insn_q.vl[$clog2(SpatzMemBytes)-1:$clog2(ELENB)] == port)
-          max_bytes += commit_insn_q.vl[$clog2(ELENB)-1:0];
+        else if (intf_bytes[$clog2(ELENB) +: $clog2(N_FU)] == fu)
+          max_bytes += intf_bytes[$clog2(ELENB)-1:0];
 
         commit_counter_load[intf][fu] = commit_insn_pop;
         commit_counter_d[intf][fu]    = (commit_insn_q.vstart >> $clog2(SpatzMemBytes)) << $clog2(ELENB);
@@ -935,19 +945,20 @@ module spatz_doublebw_vlsu
       localparam int unsigned port = intf * N_FU + fu;
 
       // The total amount of vector bytes we have to work through
-      vlen_t max_bytes;
+      vlen_t max_bytes, intf_bytes;
 
       always_comb begin
-        // Default value
-        max_bytes = (mem_spatz_req.vl >> $clog2(NrMemPorts*MemDataWidthB)) << $clog2(MemDataWidthB);
+        // This interface's share of the vector, spread over its ports
+        intf_bytes = vlsu_intf_bytes(mem_spatz_req.vl, intf);
+        max_bytes  = (intf_bytes >> $clog2(N_FU*MemDataWidthB)) << $clog2(MemDataWidthB);
 
         if (NrMemPorts == 1)
           max_bytes = mem_spatz_req.vl;
         else
-          if (mem_spatz_req.vl[$clog2(MemDataWidthB) +: $clog2(NrMemPorts)] > port)
+          if (intf_bytes[$clog2(MemDataWidthB) +: $clog2(N_FU)] > fu)
             max_bytes += MemDataWidthB;
-          else if (mem_spatz_req.vl[$clog2(MemDataWidthB) +: $clog2(NrMemPorts)] == port)
-            max_bytes += mem_spatz_req.vl[$clog2(MemDataWidthB)-1:0];
+          else if (intf_bytes[$clog2(MemDataWidthB) +: $clog2(N_FU)] == fu)
+            max_bytes += intf_bytes[$clog2(MemDataWidthB)-1:0];
 
         mem_operation_valid[intf][fu] = mem_spatz_req_valid && (max_bytes != mem_counter_q[intf][fu]);
         mem_operation_last[intf][fu]  = mem_operation_valid[intf][fu] && ((max_bytes - mem_counter_q[intf][fu]) <= (mem_is_single_element_operation ? mem_single_element_size : MemDataWidthB));
@@ -1092,7 +1103,7 @@ module spatz_doublebw_vlsu
         intf_byte_offset[intf] = '0;
       else
         // Valid for intf == 1
-        intf_byte_offset[intf] = ((commit_insn_q.vl + (SpatzMemBytes >> 1)) >> $clog2(SpatzMemBytes) << $clog2(SpatzMemBytes)) >> 1;
+        intf_byte_offset[intf] = vlsu_intf_half(commit_insn_q.vl);
     end
   end
 
