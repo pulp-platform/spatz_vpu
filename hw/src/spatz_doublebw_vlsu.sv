@@ -864,9 +864,9 @@ module spatz_doublebw_vlsu
   // Ack when the vector store finishes, or when the vector load commits to the VRF.
   // With more than an interface, we need to wait until all the interfaces commit to the VRF.
 
-  // Check if interface 1 is the interface trying to commit, if so take resp information from interface 1
-  // If both interfaces in sync, interface 1 is given priority
-  assign resp_intf = ((vrf_commit_intf_valid [1] == 1'b1) & !vrf_commit_bypass) ? 1'b1 : 1'b0;
+  // Take the response from the interface writing its final word now: an interface that
+  // committed earlier and is waiting has already cleared its buffer, and with it the id
+  assign resp_intf = vrf_valid_rsp[1] & vrf_wvalid_i[1] & !vrf_commit_bypass;
 
   // Check is both interfaces has reached to a completion and if the last write to the VRF is also done
   // Assign the instruction id from the interface that completes the last
