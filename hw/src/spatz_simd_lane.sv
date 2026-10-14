@@ -92,6 +92,9 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
     endcase // operation_i
   end       // arith_operands
 
+  int unsigned carry_pos;
+  assign carry_pos = (8 << sew_i) < Width ? (8 << sew_i) : Width;
+
   assign adder_result      = operation_valid_i ? $signed(arith_op2) + $signed(arith_op1) + carry_i : '0;
   assign subtractor_result = operation_valid_i ? $signed(arith_op2) - $signed(arith_op1) - carry_i : '0;
 
@@ -256,8 +259,9 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
             if (sew_i == rvv_pkg::vew_e'(i))
               simd_result = mult_result[8*(2**i) +: Width];
         end
-        VMADC                   : simd_result = Width'(adder_result[Width]);
-        VMSBC                   : simd_result = Width'(subtractor_result[Width]);
+        // A wider lane holds a zero-extended SEW element, whose carry/borrow is at bit SEW
+        VMADC                   : simd_result = Width'(adder_result[carry_pos]);
+        VMSBC                   : simd_result = Width'(subtractor_result[carry_pos]);
         VDIV, VDIVU, VREM, VREMU: begin
           simd_result    = div_result;
           result_valid_o = div_out_valid;
