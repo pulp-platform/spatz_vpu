@@ -243,6 +243,7 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
         VMNAND                           : simd_result = ~(op_s1_i & op_s2_i);
         VMNOR                            : simd_result = ~(op_s1_i | op_s2_i);
         VMXNOR                           : simd_result = ~(op_s1_i ^ op_s2_i);
+        VMERGE                           : simd_result = carry_i ? op_s1_i : op_s2_i;
         VSLL                             : simd_result = shift_operand << shift_amount;
         VSRL                             : simd_result = shift_operand >> shift_amount;
         VSRA                             : simd_result = $signed(shift_operand) >>> shift_amount;
