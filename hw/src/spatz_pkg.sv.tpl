@@ -494,16 +494,39 @@ package spatz_pkg;
     logic [1:0] mantissa;
   } spatz_fp8_t;
 
+  // Exact widening, including zeros, subnormals, infinities and NaNs
   function automatic spatz_fp64_t widen_fp32_to_fp64(spatz_fp32_t operand);
+    automatic int msb = 0;
     widen_fp32_to_fp64.sign     = operand.sign;
     widen_fp32_to_fp64.exponent = int'(operand.exponent - 127) + 1023;
     widen_fp32_to_fp64.mantissa = {operand.mantissa, 29'b0};
+    if (operand.exponent == '1) widen_fp32_to_fp64.exponent = '1;
+    else if (operand.exponent == '0) begin
+      widen_fp32_to_fp64.exponent = '0;
+      if (operand.mantissa != '0) begin
+        // A subnormal is normal in the wider format
+        for (int i = 0; i < 23; i++) if (operand.mantissa[i]) msb = i;
+        widen_fp32_to_fp64.exponent = msb - 149 + 1023;
+        widen_fp32_to_fp64.mantissa = {23'(operand.mantissa << (23 - msb)), 29'b0};
+      end
+    end
   endfunction
 
   function automatic spatz_fp32_t widen_fp16_to_fp32(spatz_fp16_t operand);
+    automatic int msb = 0;
     widen_fp16_to_fp32.sign     = operand.sign;
     widen_fp16_to_fp32.exponent = int'(operand.exponent - 15) + 127;
     widen_fp16_to_fp32.mantissa = {operand.mantissa, 13'b0};
+    if (operand.exponent == '1) widen_fp16_to_fp32.exponent = '1;
+    else if (operand.exponent == '0) begin
+      widen_fp16_to_fp32.exponent = '0;
+      if (operand.mantissa != '0) begin
+        // A subnormal is normal in the wider format
+        for (int i = 0; i < 10; i++) if (operand.mantissa[i]) msb = i;
+        widen_fp16_to_fp32.exponent = msb - 24 + 127;
+        widen_fp16_to_fp32.mantissa = {10'(operand.mantissa << (10 - msb)), 13'b0};
+      end
+    end
   endfunction
 
   function automatic spatz_fp16_t widen_fp8_to_fp16(spatz_fp8_t operand);
