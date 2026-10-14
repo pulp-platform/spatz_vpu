@@ -458,7 +458,8 @@ module spatz_decoder
             riscv_instr::VADC_VVM,
             riscv_instr::VADC_VXM,
             riscv_instr::VADC_VIM: begin
-              spatz_req.op = VADC;
+              spatz_req.op                           = VADC;
+              spatz_req.op_arith.use_carry_borrow_in = 1'b1;
             end
 
             riscv_instr::VMADC_VV,
@@ -476,7 +477,8 @@ module spatz_decoder
 
             riscv_instr::VSBC_VVM,
             riscv_instr::VSBC_VXM: begin
-              spatz_req.op = VSBC;
+              spatz_req.op                           = VSBC;
+              spatz_req.op_arith.use_carry_borrow_in = 1'b1;
             end
 
             riscv_instr::VMSBC_VV,

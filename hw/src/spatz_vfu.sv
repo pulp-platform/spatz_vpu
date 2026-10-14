@@ -1439,11 +1439,27 @@ assign vfcmp_result_accepted = result_tag.is_cmp && &(result_valid | ~pending_re
   // IPUs //
   //////////
 
+  // v0 bit of each element, per ELEN chunk of the word: the carry/borrow-in, or the vmerge select
+  elenb_t [N_FU-1:0] fu_carry;
+  always_comb begin : proc_fu_carry
+    automatic int unsigned elems = ELENB >> spatz_req.vtype.vsew;
+    automatic int unsigned idx;
+    fu_carry = '0;
+    if (spatz_req.op_arith.use_carry_borrow_in || spatz_req.op == VMERGE)
+      for (int unsigned fu = 0; fu < N_FU; fu++)
+        for (int unsigned k = 0; k < ELENB; k++) begin
+          idx = vl_q + fu * elems + k;
+          if (k < elems && idx < VLEN)
+            fu_carry[fu][k] = operand_v0_t_q[idx];
+        end
+  end
+
   // If there are fewer IPUs than FPUs, pipeline the execution of the integer instructions
   logic     [N_IPU*ELENB-1:0] int_ipu_in_ready;
   logic     [N_IPU*ELEN-1:0]  int_ipu_operand1;
   logic     [N_IPU*ELEN-1:0]  int_ipu_operand2;
   logic     [N_IPU*ELEN-1:0]  int_ipu_operand3;
+  elenb_t   [N_IPU-1:0]       int_ipu_carry;
   logic     [N_IPU*ELEN-1:0]  int_ipu_result;
   vfu_tag_t [N_IPU-1:0]       int_ipu_result_tag;
   logic     [N_IPU*ELENB-1:0] int_ipu_result_valid;
@@ -1519,6 +1535,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && &(result_valid | ~pending_re
       int_ipu_operand1 = ipu_wide_operand1[ipu_operand_pnt_q*ELEN*N_IPU +: ELEN*N_IPU];
       int_ipu_operand2 = ipu_wide_operand2[ipu_operand_pnt_q*ELEN*N_IPU +: ELEN*N_IPU];
       int_ipu_operand3 = ipu_wide_operand3[ipu_operand_pnt_q*ELEN*N_IPU +: ELEN*N_IPU];
+      int_ipu_carry    = fu_carry[ipu_operand_pnt_q*N_IPU +: N_IPU];
       if (spatz_req_valid && operands_ready && &int_ipu_in_ready && !is_fpu_insn) begin
         ipu_operand_pnt_d = ipu_operand_pnt_q + 1;
         if (ipu_operand_pnt_d == '0 || !(&valid_operations[ipu_operand_pnt_d*ELENB*N_IPU +: ELENB*N_IPU]))
@@ -1558,6 +1575,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && &(result_valid | ~pending_re
   end: gen_pipeline_ipu else begin: gen_no_pipeline_ipu
     assign ipu_in_ready         = int_ipu_in_ready;
     assign int_ipu_operand1     = ipu_wide_operand1;
+    assign int_ipu_carry        = fu_carry;
     assign int_ipu_operand2     = ipu_wide_operand2;
     assign int_ipu_operand3     = ipu_wide_operand3;
     assign ipu_result           = int_ipu_result;
@@ -1589,7 +1607,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && &(result_valid | ~pending_re
       .op_s2_i          (int_ipu_operand2[ipu*ELEN +: ELEN]                                                              ),
       .op_d_i           (int_ipu_operand3[ipu*ELEN +: ELEN]                                                              ),
       .tag_i            (input_tag                                                                                       ),
-      .carry_i          ('0                                                                                              ),
+      .carry_i          (int_ipu_carry[ipu]                                                                              ),
       .sew_i            (sew                                                                                             ),
       .be_o             (/* Unused */                                                                                    ),
       .result_o         (int_ipu_result[ipu*ELEN +: ELEN]                                                                ),
