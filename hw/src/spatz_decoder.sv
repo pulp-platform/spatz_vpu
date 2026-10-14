@@ -1864,10 +1864,13 @@ module spatz_decoder
             illegal_instr = 1'b1;
           end
 
-          // Set to maxvl or new desired value
-          spatz_req.rs1            = (setvl_rs1 == 0 && setvl_rd != 0) ? '1 : spatz_req.rs1;
-          // Keep vl
-          spatz_req.op_cfg.keep_vl = setvl_rs1 == '0 && setvl_rd == '0;
+          // The x0 cases do not apply to vsetivli, whose rs1 field is the AVL
+          if (decoder_req_i.instr[31:30] != 2'b11) begin
+            // Set to maxvl or new desired value
+            spatz_req.rs1            = (setvl_rs1 == 0 && setvl_rd != 0) ? '1 : spatz_req.rs1;
+            // Keep vl
+            spatz_req.op_cfg.keep_vl = setvl_rs1 == '0 && setvl_rd == '0;
+          end
         end
 
         default: illegal_instr = 1'b1;
