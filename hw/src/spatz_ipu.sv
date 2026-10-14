@@ -427,7 +427,7 @@ module spatz_ipu import spatz_pkg::*; import rvv_pkg::vew_e; #(
           lane_signal_inp.ops[2].ew16[0] = op_d[15:0];
 
           lane_signal_inp.ew16_carry[0] = carry[0];
-          lane_signal_inp.ew16_carry[1] = carry[2];
+          lane_signal_inp.ew16_carry[1] = carry[1];
           lane_signal_inp.ew32_carry    = carry[2];
           lane_signal_inp.ew64_carry    = carry[3];
 
