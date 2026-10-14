@@ -129,6 +129,7 @@ module spatz_fpu_sequencer
 
   // Is this a move instruction between GPR and FPR?
   logic is_move;
+  int unsigned move_width;
 
   // Is this a load or a store?
   logic is_load;
@@ -360,23 +361,23 @@ module spatz_fpu_sequencer
             illegal_inst = 1'b1;
           end
         end
-        // riscv_instr::FMV_X_S: begin
-        //   if (RVF) begin
-        //     use_rd  = 1'b1;
-        //     use_fs1 = 1'b1;
-        //     is_move = 1'b1;
-        //   end else begin
-        //     illegal_inst = 1'b1;
-        //   end
-        // end
-        // riscv_instr::FMV_S_X: begin
-        //   if (RVF) begin
-        //     use_fd  = 1'b1;
-        //     is_move = 1'b1;
-        //   end else begin
-        //     illegal_inst = 1'b1;
-        //   end
-        // end
+        riscv_instr::FMV_X_W: begin
+          if (RVF) begin
+            use_rd  = 1'b1;
+            use_fs1 = 1'b1;
+            is_move = 1'b1;
+          end else begin
+            illegal_inst = 1'b1;
+          end
+        end
+        riscv_instr::FMV_W_X: begin
+          if (RVF) begin
+            use_fd  = 1'b1;
+            is_move = 1'b1;
+          end else begin
+            illegal_inst = 1'b1;
+          end
+        end
 
         // Double Precision Floating-Point
         riscv_instr::FADD_D,
@@ -778,12 +779,17 @@ module spatz_fpu_sequencer
     // Was there already a store committing in this cycle?
     outstanding_store_d = outstanding_store_q && (fp_lsu_qwrite && fp_lsu_qvalid && fp_lsu_qready);
 
+    // Width of the moved value
+    move_width = issue_req_i.data_op inside {riscv_instr::FMV_X_B, riscv_instr::FMV_B_X} ? 8  :
+                 issue_req_i.data_op inside {riscv_instr::FMV_X_H, riscv_instr::FMV_H_X} ? 16 : 32;
+
     // Is there a move trying to commit during this cycle?
     move_stall = is_move && use_rd && !fp_move_result_ready_o;
     if (is_move && use_rd && operands_available) begin
+      // fmv.x.<fmt> sign-extends the value
       fp_move_result_i = spatz_rsp_t'{
         id     : issue_req_i.id,
-        data   : fpr_rdata[0],
+        data   : $signed(fpr_rdata[0] << (FLEN - move_width)) >>> (FLEN - move_width),
         default: '0
       };
       fp_move_result_valid_i = 1'b1;
@@ -831,7 +837,8 @@ module spatz_fpu_sequencer
     end
     // Commit moves to the RF
     else if (is_move && use_fd && !stall) begin
-      fpr_wdata[1] = issue_req_i.data_arga;
+      // fmv.<fmt>.x NaN-boxes the value
+      fpr_wdata[1] = ({FLEN{1'b1}} << move_width) | (issue_req_i.data_arga & ~({FLEN{1'b1}} << move_width));
       fpr_waddr[1] = fd;
       fpr_we[1]    = 1'b1;
     end
