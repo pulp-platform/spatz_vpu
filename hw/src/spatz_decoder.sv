@@ -885,6 +885,9 @@ module spatz_decoder
           spatz_req.vs2                = arith_s2;
           spatz_req.use_vs2            = 1'b1;
           spatz_req.op_arith.is_scalar = 1'b1;
+          // Scalar requests keep the decoder's vtype, and the result is
+          // sign-extended from SEW
+          spatz_req.vtype.vsew         = decoder_req_i.vtype.vsew;
         end
 
         // Vector floating-point instructions
