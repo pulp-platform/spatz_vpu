@@ -386,6 +386,12 @@ module spatz_vfu
         default:;
       endcase
 
+      // A scalar op works on one element, and its integer side is a 32-bit GPR
+      if (spatz_req.op_arith.is_scalar) begin
+        fpu_vectorial_op = 1'b0;
+        fpu_int_fmt      = fpnew_pkg::INT32;
+      end
+
       unique case (spatz_req.op)
         VFADD: fpu_op = fpnew_pkg::ADD;
         VFSUB: begin
@@ -596,6 +602,9 @@ module spatz_vfu
               operand2 = vrf_rdata_i[0];
             else if ((!spatz_req.op_arith.is_scalar || spatz_req.op == VADD) && spatz_req.use_vs2)
               operand2 = spatz_req.op_arith.is_reduction ? $unsigned(reduction_q[0]) : vrf_rdata_masked[0];
+            // Scalar FP operands keep their NaN-boxing, like operand1 and operand3
+            else if (spatz_req.op_arith.is_scalar)
+              operand2 = {1*N_FU{spatz_req.rs2}};
             else
               // Replicate scalar operands
               unique case (spatz_req.op == VSDOTP ? vew_e'(spatz_req.vtype.vsew + 1) : spatz_req.vtype.vsew)
@@ -1148,7 +1157,8 @@ module spatz_vfu
     // Tag (propagated with the operations)
     input_tag = '{
       id             : spatz_req.id,
-      vsew           : spatz_req.vtype.vsew,
+      // Scalar fcvt.w*/fclass write a 32-bit integer, not a SEW-wide element
+      vsew           : spatz_req.op_arith.is_scalar && spatz_req.op inside {VF2I, VF2U, VFCLASS} ? EW_32 : spatz_req.vtype.vsew,
       vstart         : spatz_req.vstart,
       vd_addr        : spatz_req.op_arith.is_scalar ? vfu_rsp_addr_t'(spatz_req.rd) : vfu_rsp_addr_t'(vreg_addr_q[2]),
       wb             : spatz_req.op_arith.is_scalar,
