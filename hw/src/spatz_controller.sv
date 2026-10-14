@@ -250,6 +250,12 @@ module spatz_controller
 
   // Counter to track the vlen completed for each instruction
   vlen_t [NrParallelInstructions-1:0] vl_cnt_d, vl_cnt_q, vl_max_d, vl_max_q;
+  // Bytes of a vector handled by the first VLSU interface: half of it rounded up to two VRF
+  // words, as the VLSU splits it, or all of it if smaller
+  function automatic vlen_t intf0_bytes(vlen_t bytes);
+    automatic vlen_t half = ((bytes + 2*VRFWordBWidth - 1) / (2*VRFWordBWidth)) * VRFWordBWidth;
+    return (bytes < half) ? bytes : half;
+  endfunction
 
   // VLSU interfaces write independently and in parallel (unlike VFU/VSLDU,
   // which share a single sequential vl_cnt progress counter), so each
@@ -262,6 +268,9 @@ module spatz_controller
   `FF(done_result_q, done_result_d, '0)
   `FF(vl_cnt_q, vl_cnt_d, '0)
   `FF(vl_max_q, vl_max_d, '0)
+  // Bytes of each instruction's vector, to check that chained instructions split it alike
+  vlen_t [NrParallelInstructions-1:0] vl_bytes_d, vl_bytes_q;
+  `FF(vl_bytes_q, vl_bytes_d, '0)
   `FF(vlsu_vl_cnt_q, vlsu_vl_cnt_d, '0)
   `FF(narrow_q, narrow_d, '0)
 `else
@@ -295,6 +304,7 @@ module spatz_controller
     narrow_d             = narrow_q;
     vl_cnt_d             = vl_cnt_q;
     vl_max_d             = vl_max_q;
+    vl_bytes_d           = vl_bytes_q;
     vlsu_vl_cnt_d         = vlsu_vl_cnt_q;
 `endif
 
@@ -344,7 +354,7 @@ module spatz_controller
 
           wrote_result_narrowing_d[sb_id_i[port]] = sb_wrote_result_i[port_idx] ^ narrow_wide_q[sb_id_i[port]];
           wrote_result_d[intID][sb_id_i[port]]    = sb_wrote_result_i[port_idx] && (!narrow_wide_q[sb_id_i[port]] || wrote_result_narrowing_q[sb_id_i[port]]);
-          if (vl_cnt_q[sb_id_i[port]] >= (vl_max_d[sb_id_i[port]] * (intID + 1) - VRFWriteSize))
+          if ((vl_cnt_q[sb_id_i[port]] + VRFWriteSize) >= (intID ? vl_bytes_q[sb_id_i[port]] : vl_max_d[sb_id_i[port]]))
             done_result_d[intID][sb_id_i[port]] = wrote_result_d[intID][sb_id_i[port]];
         end
         // VLSU: intID is fixed per interface (0 for WD0, 1 for WD1)
@@ -365,7 +375,8 @@ module spatz_controller
           // Written as cnt+size >= max rather than cnt >= max-size: vl_max_d
           // can be smaller than a single VRFWordBWidth write (e.g. a tiny
           // vl=4,e32 request), and max-size would underflow in that case.
-          if ((vlsu_vl_cnt_q[intID][sb_id_i[port]] + VRFWordBWidth) >= vl_max_d[sb_id_i[port]])
+          if ((vlsu_vl_cnt_q[intID][sb_id_i[port]] + VRFWordBWidth) >=
+              (intID ? vl_bytes_q[sb_id_i[port]] - vl_max_d[sb_id_i[port]] : vl_max_d[sb_id_i[port]]))
             done_result_d[intID][sb_id_i[port]] = wrote_result_d[intID][sb_id_i[port]];
         end
       end
@@ -490,11 +501,19 @@ module spatz_controller
         narrow_wide_d[spatz_req.id] = 1'b1;
 
 `ifdef DOUBLE_BW
+      // Chaining follows each VLSU interface's part of a register, and the VLSU splits a
+      // register by vl: only chain to instructions with the same vl in bytes
+      for (int unsigned insn = 0; insn < NrParallelInstructions; insn++)
+        if (insn != spatz_req.id && scoreboard_d[spatz_req.id].deps[insn] && vl_bytes_q[insn] != vlen_t'(spatz_req.vl << spatz_req.vtype.vsew))
+          scoreboard_d[spatz_req.id].prevent_chaining = 1'b1;
+      vl_bytes_d[spatz_req.id] = spatz_req.vl << spatz_req.vtype.vsew;
+
       narrow_d[spatz_req.id] = spatz_req.op_arith.is_narrowing;
 
       // Track request vl for vector chaining, used only for DOUBLE_BW
       // Default spatz uses 1-bit credit counter using wrote_result_q for chaining
-      vl_max_d[spatz_req.id]      = (spatz_req.vl >> 1) << spatz_req.vtype.vsew;
+      // Bytes before the second VLSU interface's part of the vector (same split as the VLSU)
+      vl_max_d[spatz_req.id]      = intf0_bytes(spatz_req.vl << spatz_req.vtype.vsew);
       vl_cnt_d[spatz_req.id]      = '0;
       vlsu_vl_cnt_d[0][spatz_req.id] = '0;
       vlsu_vl_cnt_d[1][spatz_req.id] = '0;
