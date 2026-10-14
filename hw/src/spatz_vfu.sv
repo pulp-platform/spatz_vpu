@@ -516,7 +516,8 @@ module spatz_vfu
 
   // The signal to choose comparison instructions
   logic is_cmp_req;
-  assign is_cmp_req = (spatz_req.op == VFCMP) || spatz_req.op inside {VMSEQ, VMSNE, VMSLT, VMSLTU, VMSLE, VMSLEU, VMSGT, VMSGTU};
+  // Ops whose one-bit results are packed into a mask register
+  assign is_cmp_req = (spatz_req.op == VFCMP) || spatz_req.op inside {VMSEQ, VMSNE, VMSLT, VMSLTU, VMSLE, VMSLEU, VMSGT, VMSGTU, VMADC, VMSBC};
 
   // FSM to manage operands between normal calculation and v0.t fetching
   logic v0_t_is_ready;
@@ -1157,7 +1158,8 @@ module spatz_vfu
       reduction      : spatz_req.op_arith.is_reduction,
       is_cmp         : is_cmp_req,
       vl             : spatz_req.vl,
-      vm             : spatz_req.op_arith.vm,
+      // vm = 0 selects carry/borrow-in, not masking, for vmadc/vmsbc
+      vm             : spatz_req.op_arith.vm || spatz_req.op_arith.use_carry_borrow_in,
       vma            : spatz_req.vtype.vma,
       is_merge       : (spatz_req.op == VMERGE),
       valid_bytes    : valid_bytes_wr // count of the number of valid bytes in the VRF word (write side)
