@@ -420,6 +420,7 @@ module spatz_fpu_sequencer
         riscv_instr::VFSUB_VF,
         riscv_instr::VFMIN_VF,
         riscv_instr::VFMAX_VF,
+        riscv_instr::VFMERGE_VFM,
         riscv_instr::VMFEQ_VF,
         riscv_instr::VMFNE_VF,
         riscv_instr::VMFLT_VF,
