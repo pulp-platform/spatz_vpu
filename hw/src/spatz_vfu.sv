@@ -1818,7 +1818,8 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
         && (fpu == 0 || !(divsqrt_shared_active))
         && !(fpu == 0 && divsqrt_shared_active && divsqrt_inflight_q);
 
-      assign fpu_result_ready = (fpu == 0 && divsqrt_shared_active)? divsqrt_shared_ready : result_ready;
+      // Only the FPU0 retires scalar instructions
+      assign fpu_result_ready = (fpu == 0 && divsqrt_shared_active)? divsqrt_shared_ready : (result_ready && (!result_tag.wb || fpu == 0));
 
 
       `FFL(fpu_operand1_q, fpu_operand1, int_fpu_in_valid && int_fpu_in_ready, '0)
