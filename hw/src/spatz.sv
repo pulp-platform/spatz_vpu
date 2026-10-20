@@ -46,7 +46,7 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     // Derived parameters. DO NOT CHANGE!
     parameter int                  unsigned NumOutstandingLoads = 8,
     parameter type                          pace_cfg_t           = logic,
-    parameter pace_cfg_t                    PaceCfg              = '0,
+    parameter spatz_pace_cfg_t              PaceCfg              = '0,
     localparam type                         dca_req_t           = `DCA_REQ_STRUCT(N_FPU*ELEN),
     localparam type                         dca_rsp_t           = `DCA_RSP_STRUCT(N_FPU*ELEN)
   ) (

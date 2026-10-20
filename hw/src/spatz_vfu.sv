@@ -22,7 +22,7 @@ module spatz_vfu
     /// Enable external Direct Compute Access requests into the FPU lanes.
     parameter bit EnableDca = 1'b0,
     parameter type pace_cfg_t = logic,
-    parameter pace_cfg_t PaceCfg = '0,
+    parameter spatz_pace_cfg_t PaceCfg = '0,
     // Derived parameters. DO NOT CHANGE!
     localparam type dca_req_t = `DCA_REQ_STRUCT(N_FPU*ELEN),
     localparam type dca_rsp_t = `DCA_RSP_STRUCT(N_FPU*ELEN)

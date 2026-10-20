@@ -630,4 +630,19 @@ package spatz_pkg;
   localparam int unsigned VTGChannelBWidth      = VTGNrBanksPerChannel * ELENB;
   localparam int unsigned VTGNrWordsPerChannel  = VENTAGLIO_BUFFER_SIZE / (VTGNrChannels * VTGChannelWidth);
 
+  // PACE configuration handed down from the cluster. A concrete type (rather
+  // than a type parameter) keeps field accesses in constant expressions legal
+  // for tools that analyze modules before elaboration (e.g. Spyglass).
+  typedef struct packed {
+    logic        enable;
+    logic [31:0] memory_size;
+    logic [31:0] degree;
+    logic [31:0] parts;
+    logic [31:0] eps;
+    logic [31:0] data_width;
+    logic [31:0] param_width;
+    logic [31:0] fmt_config;
+    logic [31:0] pipe_dist;
+  } spatz_pace_cfg_t;
+
 endpackage : spatz_pkg
