@@ -377,8 +377,7 @@ module spatz_vfu
   logic fpu_op_mode;
   logic fpu_vectorial_op;
 
-  logic [N_FPU-1:0] fpu_busy_d, fpu_busy_q;
-  `FF(fpu_busy_q, fpu_busy_d, '0)
+  logic [N_FPU-1:0] fpu_busy_d;
 
   status_t [N_FPU-1:0] fpu_status_d, fpu_status_q;
   `FF(fpu_status_q, fpu_status_d, '0)
@@ -387,7 +386,7 @@ module spatz_vfu
       fpu_op           = fpnew_pkg::FMADD;
       fpu_op_mode      = 1'b0;
       fpu_vectorial_op = 1'b0;
-      is_fpu_busy      = |fpu_busy_q;
+      is_fpu_busy      = |fpu_busy_d;
       fpu_src_fmt      = fpnew_pkg::FP32;
       fpu_dst_fmt      = fpnew_pkg::FP32;
       fpu_int_fmt      = fpnew_pkg::INT32;
@@ -1647,6 +1646,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       ipu_result_pnt_d   = ipu_result_pnt_q;
       ipu_operand_pnt_d  = ipu_operand_pnt_q;
       ipu_result_tag_d   = ipu_result_tag_q;
+      ipu_saturated_d    = ipu_saturated_q;
 
       // Send operands
       ipu_in_ready     = 1'b0;
