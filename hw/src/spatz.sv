@@ -91,6 +91,7 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
   logic     vfu_rsp_ready;
   logic     vfu_rsp_valid, vfu_rsp_buf_valid;
   vfu_rsp_t vfu_rsp, vfu_rsp_buf;
+  logic     vfu_vxsat;
 
   logic      vlsu_req_ready;
   logic      vlsu_rsp_valid, vlsu_rsp_buf_valid;
@@ -343,6 +344,7 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .vfu_rsp_valid_i  (vfu_rsp_buf_valid   ),
     .vfu_rsp_ready_o  (vfu_rsp_ready       ),
     .vfu_rsp_i        (vfu_rsp_buf         ),
+    .vfu_vxsat_i      (vfu_vxsat           ),
     // VLSU
     .vlsu_req_ready_i (vlsu_req_ready      ),
     .vlsu_rsp_valid_i (vlsu_rsp_buf_valid  ),
@@ -544,7 +546,8 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; #(
     .vrf_rvalid_i     (vrf_rvalid[VFU_VD_RD:VFU_VS2_RD]                        ),
     .vrf_id_o         ({sb_id[SB_VFU_VD_WD], sb_id[SB_VFU_VD_RD:SB_VFU_VS2_RD]}),
     // FPU side-channel
-    .fpu_status_o     (fpu_status_o                                            )
+    .fpu_status_o     (fpu_status_o                                            ),
+    .vxsat_o          (vfu_vxsat                                               )
   );
 
   //////////
