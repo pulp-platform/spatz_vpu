@@ -251,6 +251,7 @@ module spatz_vfu
   // it represents the VRF word index. Multiplication by 8 to account for LMUL
   logic [$clog2(NrWordsPerVector*8):0] word_idx_d, word_idx_q;
   logic [$clog2(N_FU)-1:0] divsqrt_slot_q, divsqrt_slot_d;
+  logic divsqrt_inflight_q, divsqrt_inflight_d;
   logic last_divsqrt;
 
   assign last_divsqrt = divsqrt_shared_active ? ((vl_q + (divsqrt_slot_q+1)*nr_elem_word_divsqrt) >= spatz_req.vl) : 1'b0;
@@ -755,7 +756,6 @@ module spatz_vfu
       divsqrt_slot_d = (divsqrt_slot_q == N_FU - 1 || result_tag.last) ? '0 : divsqrt_slot_q + 1;
   end : proc_divsqrt_slot
 
-  logic divsqrt_inflight_q, divsqrt_inflight_d;
   `FF(divsqrt_inflight_q, divsqrt_inflight_d, 1'b0)
 
   always_comb begin : proc_divsqrt_inflight
