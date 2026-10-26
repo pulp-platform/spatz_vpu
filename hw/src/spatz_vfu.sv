@@ -1689,9 +1689,12 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
         ipu_result_tag_d   = '0;
       end
 
-      // Store results
+      // Store results, but only into a free slot. While the buffer waits for a
+      // VRF write grant, the IPU must hold its result, or the slot is
+      // overwritten and the result pointer gets out of step.
       int_ipu_result_ready = '0;
-      if (&int_ipu_result_valid) begin
+      if (&int_ipu_result_valid &&
+          (!ipu_result_valid_q[ipu_result_pnt_q*ELENB*N_IPU] || result_ready)) begin
         ipu_result_d[ipu_result_pnt_q*ELEN*N_IPU +: ELEN*N_IPU]         = int_ipu_result;
         ipu_result_valid_d[ipu_result_pnt_q*ELENB*N_IPU +: ELENB*N_IPU] = int_ipu_result_valid;
         ipu_saturated_d[ipu_result_pnt_q*ELENB*N_IPU +: ELENB*N_IPU]    = int_ipu_saturated;
