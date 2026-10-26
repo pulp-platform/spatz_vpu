@@ -251,6 +251,7 @@ module spatz_vfu
   // it represents the VRF word index. Multiplication by 8 to account for LMUL
   logic [$clog2(NrWordsPerVector*8):0] word_idx_d, word_idx_q;
   logic [$clog2(N_FU)-1:0] divsqrt_slot_q, divsqrt_slot_d;
+  logic divsqrt_inflight_q, divsqrt_inflight_d;
   logic last_divsqrt;
 
   assign last_divsqrt = divsqrt_shared_active ? ((vl_q + (divsqrt_slot_q+1)*nr_elem_word_divsqrt) >= spatz_req.vl) : 1'b0;
@@ -260,6 +261,10 @@ module spatz_vfu
   // All the results of the current VRF word in the FUs are ready
   logic fu_word_complete;
   assign fu_word_complete = &(result_valid | ~pending_results);
+
+  // No older instruction still has an operation or a result in the FUs
+  logic vfu_drained;
+  assign vfu_drained = !is_fpu_busy && !is_ipu_busy && !divsqrt_inflight_q && !(|result_valid);
 
   always_comb begin: control_proc
     // Maintain state
@@ -354,10 +359,11 @@ module spatz_vfu
 
     // An instruction finished execution
     if ((result_tag.last && fu_word_complete && (reduction_state_q inside {Reduction_NormalExecution, Reduction_Wait} || ! result_tag.reduction)) || reduction_done) begin
-      vfu_rsp_o.id      = result_tag.id;
+      // On reduction_done the retiring op is spatz_req, and a reduction emits a vector response
+      vfu_rsp_o.id      = reduction_done ? spatz_req.id : result_tag.id;
       vfu_rsp_o.rd      = result_tag.vd_addr[GPRWidth-1:0];
-      vfu_rsp_o.wb      = result_tag.wb;
-      vfu_rsp_o.result  = result_tag.wb ? scalar_result : '0;
+      vfu_rsp_o.wb      = result_tag.wb && !reduction_done;
+      vfu_rsp_o.result  = (result_tag.wb && !reduction_done) ? scalar_result : '0;
       vfu_rsp_valid_o   = 1'b1;
     end
   end: control_proc
@@ -775,7 +781,6 @@ module spatz_vfu
       divsqrt_slot_d = (divsqrt_slot_q == N_FU - 1 || result_tag.last) ? '0 : divsqrt_slot_q + 1;
   end : proc_divsqrt_slot
 
-  logic divsqrt_inflight_q, divsqrt_inflight_d;
   `FF(divsqrt_inflight_q, divsqrt_inflight_d, 1'b0)
 
   always_comb begin : proc_divsqrt_inflight
@@ -1002,20 +1007,20 @@ module spatz_vfu
 
         // Do we have a new reduction instruction?
         if (spatz_req_valid && !running_q[spatz_req.id] && spatz_req.op_arith.is_reduction)
-           reduction_state_d = (!spatz_req.op_arith.vm) ? Reduction_Read_V0_t : (is_fpu_busy || divsqrt_inflight_q) ? Reduction_Wait : Reduction_Init;
+           reduction_state_d = (!spatz_req.op_arith.vm) ? Reduction_Read_V0_t : !vfu_drained ? Reduction_Wait : Reduction_Init;
       end
 
       Reduction_Wait: begin
         // Are we ready to accept a result?
         result_ready = fu_word_complete && ((result_tag.wb && vfu_rsp_ready_i) || vrf_wvalid_i);
 
-        if (!is_fpu_busy)
+        if (vfu_drained)
           reduction_state_d = Reduction_Init;
       end
 
       Reduction_Read_V0_t:begin
         if(reduction_v0_t_is_ready)
-          if (!is_fpu_busy)
+          if (vfu_drained)
             reduction_state_d = Reduction_Init;
           else reduction_state_d = Reduction_Wait;
         else reduction_state_d = Reduction_Read_V0_t;
@@ -1697,7 +1702,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
         int_ipu_result_ready                                            = 1'b1;
 
         // Scalar operation
-        if (ipu_result_tag_d.wb || spatz_req.op_arith.is_reduction)
+        if (ipu_result_tag_d.wb || ipu_result_tag_d.reduction)
           ipu_result_pnt_d = '0;
       end
     end

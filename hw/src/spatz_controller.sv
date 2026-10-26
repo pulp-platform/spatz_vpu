@@ -178,7 +178,8 @@ module spatz_controller
       // Change vtype and vl if we have a config instruction
       if (spatz_req.op == VCFG) begin
         // Check if vtype is valid
-        if ((spatz_req.vtype.vsew > MAXEW) || (spatz_req.vtype.vlmul inside {LMUL_RES, LMUL_F8}) || (signed'(spatz_req.vtype.vlmul) + signed'($clog2(ELEN)) < signed'(spatz_req.vtype.vsew))) begin
+        // Illegal if SEW > MAXEW or LMUL is reserved or log2(LMUL) + log2(ELEN) < log2(SEW)
+        if (spatz_req.vtype.vill ||(spatz_req.vtype.vsew > MAXEW) || (spatz_req.vtype.vlmul inside {LMUL_RES}) || (signed'(spatz_req.vtype.vlmul) + signed'($clog2(ELEN)) < signed'(spatz_req.vtype.vsew) + 3)) begin
           // Invalid
           vtype_d = '{vill: 1'b1, vsew: EW_8, vlmul: LMUL_1, default: '0};
           vl_d    = '0;
@@ -194,6 +195,7 @@ module spatz_controller
             unique case (spatz_req.vtype.vlmul)
               LMUL_F2: vlmax >>= 1;
               LMUL_F4: vlmax >>= 2;
+              LMUL_F8: vlmax >>= 3;
               LMUL_1 : vlmax <<= 0;
               LMUL_2 : vlmax <<= 1;
               LMUL_4 : vlmax <<= 2;
@@ -882,7 +884,8 @@ module spatz_controller
         end
         VFU: begin
           // Do not check vtype for scalar operations running on the spatz VFU
-          if (!decoder_rsp.spatz_req.op_arith.is_scalar) begin
+          // but check vtype for vfmv.f.s and vmv.x.s that have is_scalar=1 and use_vs2=1
+          if (!decoder_rsp.spatz_req.op_arith.is_scalar || decoder_rsp.spatz_req.use_vs2) begin
             // vtype is illegal -> illegal instruction
             if (vtype_q.vill) begin
               issue_rsp_o.accept = 1'b0;
@@ -969,7 +972,8 @@ module spatz_controller
           unique case (spatz_req.op_csr.addr)
             riscv_instr::CSR_VSTART: rsp_d.data = elen_t'(vstart_q);
             riscv_instr::CSR_VL    : rsp_d.data = elen_t'(vl_q);
-            riscv_instr::CSR_VTYPE : rsp_d.data = elen_t'(vtype_q);
+            // vill must be held at XLEN-1 for RVV compliance. Snitch is a 32-bit core
+            riscv_instr::CSR_VTYPE : rsp_d.data = elen_t'({vtype_q.vill, 23'b0, vtype_q.vma, vtype_q.vta, vtype_q.vsew, vtype_q.vlmul});
             riscv_instr::CSR_VLENB : rsp_d.data = elen_t'(VLENB);
             riscv_instr::CSR_VXSAT : rsp_d.data = elen_t'(vxsat_q);
             riscv_instr::CSR_VXRM  : rsp_d.data = '0;

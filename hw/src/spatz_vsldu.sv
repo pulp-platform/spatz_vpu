@@ -113,6 +113,8 @@ module spatz_vsldu
     vrf_addr_t waddr;
     vrf_data_t wdata;
     vrf_be_t wbe;
+    spatz_id_t id;
+    logic last;
   } vrf_req_t;
 
   vrf_req_t vrf_req_d, vrf_req_q;
@@ -167,10 +169,6 @@ module spatz_vsldu
   logic is_slide_up;
   assign is_slide_up = spatz_req.op == VSLIDEUP;
 
-  // Instruction currently committing results
-  spatz_id_t op_id_q, op_id_d;
-  `FF(op_id_q, op_id_d, '0)
-
   // Number of bytes we slide up or down
   vlen_t slide_amount_q, slide_amount_d;
   `FF(slide_amount_q, slide_amount_d, '0)
@@ -223,14 +221,6 @@ module spatz_vsldu
   // Currently running instructions
   logic [NrParallelInstructions-1:0] running_d, running_q;
   `FF(running_q, running_d, '0)
-
-  // Respond to controller if we are finished executing
-  typedef enum logic {
-    VSLDU_RUNNING,    // Running an instruction
-    VSLDU_WAIT_WVALID // Waiting for the last wvalid to acknowledge the instruction
-   } state_t;
-   state_t state_q, state_d;
-  `FF(state_q, state_d, VSLDU_RUNNING)
 
   // New instruction
   // Initialize the internal state one cycle in advance
@@ -556,44 +546,17 @@ module spatz_vsldu
   end: vsldu_vreg_counter_proc
 
   always_comb begin: vsldu_rsp
-    // Maintain state
-    state_d = state_q;
-    op_id_d = op_id_q;
 
     // Do not acknowledge anything
     vsldu_rsp_valid_o = 1'b0;
     vsldu_rsp_o       = '0;
 
-    // ID of the instruction currently writing elements
-    vrf_id_o[1] = spatz_req.id;
-
-    case (state_q)
-      VSLDU_RUNNING: begin
-        // Did we finish the execution of an instruction?
-        if (!is_vl_zero && ops_finished && spatz_req_valid) begin
-          op_id_d = spatz_req.id;
-          state_d = VSLDU_WAIT_WVALID;
-        end
-      end
-
-      VSLDU_WAIT_WVALID: begin
-        vrf_id_o[1] = op_id_q; // ID of the instruction currently writing to the VRF
-
-        if (vrf_wvalid_i) begin
-          vsldu_rsp_valid_o = 1'b1;
-          vsldu_rsp_o.id    = op_id_q;
-          state_d           = VSLDU_RUNNING;
-
-          // Did we finish *another* instruction?
-          if (!is_vl_zero && ops_finished && spatz_req_valid) begin
-            op_id_d = spatz_req.id;
-            state_d = VSLDU_WAIT_WVALID;
-          end
-        end
-      end // case: VSLDU_WAIT_WVALID
-
-      default:;
-    endcase
+    // response: the last word of the instruction is being written now
+    if (vrf_req_valid_q && vrf_req_q.last && vrf_wvalid_i) begin
+      vsldu_rsp_valid_o = 1'b1;
+      vsldu_rsp_o.id    = vrf_req_q.id;
+    end
+    vrf_id_o[1] = vrf_req_valid_q ? vrf_req_q.id : spatz_req.id;
   end: vsldu_rsp
 
   ///////////////////////
@@ -870,6 +833,11 @@ module spatz_vsldu
   assign vrf_req_d.wdata = sld_req.wdata;
   assign vrf_req_d.waddr = is_compress ? cmp_waddr     : sld_req.waddr;
   assign vrf_req_d.wbe   = is_compress ? cmp_wbe       : sld_req.wbe;
+  assign vrf_req_d.last  = is_compress ? 
+                          (((cmp_state_q == CMP_RUN) && cmp_last_word && !cmp_need_flush) ||
+                          (cmp_state_q == CMP_FLUSH)):
+                          (vreg_operation_last && !is_vl_zero);
+  assign vrf_req_d.id    = spatz_req.id;
   assign vrf_req_valid_d = is_compress ? cmp_req_valid : sld_req_valid;
 
 endmodule : spatz_vsldu
