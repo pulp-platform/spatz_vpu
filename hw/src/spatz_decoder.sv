@@ -1026,14 +1026,15 @@ module spatz_decoder
           automatic vreg_t arith_s2 = decoder_req_i.instr[24:20];
           automatic vreg_t arith_d  = decoder_req_i.instr[11:7];
 
-          spatz_req.op                 = VADD;
-          spatz_req.ex_unit            = VFU;
-          spatz_req.rd                 = arith_d;
-          spatz_req.use_rd             = 1'b1;
-          spatz_req.vs2                = arith_s2;
-          spatz_req.use_vs2            = 1'b1;
-          spatz_req.op_arith.is_scalar = 1'b1;
-          spatz_req.vtype.vsew         = decoder_req_i.vtype.vsew;
+          spatz_req.op                            = VADD;
+          spatz_req.ex_unit                       = VFU;
+          spatz_req.rd                            = arith_d;
+          spatz_req.use_rd                        = 1'b1;
+          spatz_req.vs2                           = arith_s2;
+          spatz_req.use_vs2                       = 1'b1;
+          spatz_req.op_arith.is_scalar            = 1'b1;
+          spatz_req.op_arith.is_int_scalar_move   = 1'b1;
+          spatz_req.vtype.vsew                    = decoder_req_i.vtype.vsew;
         end
 
         // Vector floating-point instructions

@@ -203,6 +203,7 @@ package spatz_pkg;
     logic is_reduction;
     logic is_ordered;
     logic switch_rs1_rd;
+    logic is_int_scalar_move;
 
     logic widen_vs1;
     logic widen_vs2;

@@ -811,16 +811,15 @@ module spatz_vfu
 
   always_comb begin : proc_scalar_result
     scalar_result = '0;
-    if (result_tag.wb) begin
-      if (state_q == VFU_RunningIPU) begin
-        unique case (result_tag.vsew)
+    if (spatz_req.op_arith.is_scalar || result_tag.last) begin
+      scalar_result = result[ELEN-1:0];
+      if (spatz_req.op_arith.is_int_scalar_move) begin
+        unique case (spatz_req.vtype.vsew)
           EW_8:    scalar_result = elen_t'($signed(result[7:0]));
           EW_16:   scalar_result = elen_t'($signed(result[15:0]));
           EW_32:   scalar_result = elen_t'($signed(result[31:0]));
           default: scalar_result = result[ELEN-1:0];
         endcase
-      end else begin
-        scalar_result = result[ELEN-1:0];
       end
     end
   end : proc_scalar_result
