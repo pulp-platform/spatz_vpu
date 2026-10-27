@@ -1025,6 +1025,7 @@ module spatz_decoder
           spatz_req.vs2                = arith_s2;
           spatz_req.use_vs2            = 1'b1;
           spatz_req.op_arith.is_scalar = 1'b1;
+          spatz_req.vtype.vsew         = decoder_req_i.vtype.vsew;
         end
 
         // Vector floating-point instructions
@@ -1291,6 +1292,7 @@ module spatz_decoder
               riscv_instr::VFREDOSUM_VS: begin
                 spatz_req.op                    = VFADD;
                 spatz_req.op_arith.is_reduction = 1'b1;
+                spatz_req.op_arith.is_ordered   = 1'b1;
                 // Switch vs1 and vs2
                 spatz_req.vs1                   = arith_s2;
                 spatz_req.vs2                   = arith_s1;

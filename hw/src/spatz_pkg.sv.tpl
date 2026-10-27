@@ -104,7 +104,7 @@ package spatz_pkg;
   localparam int unsigned NrParallelInstructions = 4;
 `endif
 
-  localparam bit divsqrt_is_shared = ${cfg['divsqrt_is_shared']};
+  localparam bit divsqrt_is_shared = ${cfg.get('divsqrt_is_shared', 1)};
 
 
   // Largest element width that Spatz supports
@@ -226,6 +226,7 @@ package spatz_pkg;
     logic is_scalar;
     logic is_narrowing;
     logic is_reduction;
+    logic is_ordered;
     logic switch_rs1_rd;
 
     logic widen_vs1;
