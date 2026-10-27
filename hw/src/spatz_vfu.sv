@@ -276,7 +276,7 @@ module spatz_vfu
     running_d         = running_q;
     state_d           = state_q;
     narrowing_upper_d = narrowing_upper_q;
-    widening_upper_d  = widening_upper_q ^ ((spatz_req.op_arith.widen_vs1 || spatz_req.op_arith.widen_vs2) && !spatz_req.op_arith.is_ordered);
+    widening_upper_d  = widening_upper_q;
 
     // We are not stalling
     stall = 1'b0;

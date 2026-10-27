@@ -200,7 +200,7 @@ module spatz_ipu import spatz_pkg::*; import rvv_pkg::vew_e; #(
           lane_signal_inp.ops[2].ew16 = op_d[15:0];
 
           lane_signal_inp.ew16_carry = carry[0];
-          lane_signal_inp.ew32_carry = carry[1];
+          lane_signal_inp.ew32_carry = carry[2];
 
           // Activate the 32 and 16b lanes
           lane_signal_inp.ew32_valid = operation_valid;
