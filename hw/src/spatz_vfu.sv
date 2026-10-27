@@ -577,7 +577,7 @@ module spatz_vfu
   logic [VLEN-1:0] cmp_mask_dst_q;
   assign cmp_mask_dst_q = {cmp_mask_dst_hi_q, cmp_mask_dst_lo_q};
 
-    // The signal to choose comparison instructions  
+    // The signal to choose comparison instructions
   logic is_cmp_req;
   assign is_cmp_req = (spatz_req.op == VFCMP) || spatz_req.op inside {VMSEQ, VMSNE, VMSLT, VMSLTU, VMSLE, VMSLEU, VMSGT, VMSGTU, VMADC, VMSBC};
 
@@ -1722,7 +1722,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
         EW_8:  for (int e = 0; e < N_FU*(ELENB);   e++) fu_carry[e]   = operand_v0_t_q[vl_q + e];
         EW_16: for (int e = 0; e < N_FU*(ELENB/2); e++) fu_carry[e*2] = operand_v0_t_q[vl_q + e];
         EW_32: for (int e = 0; e < N_FU*(ELENB/4); e++) fu_carry[e*4] = operand_v0_t_q[vl_q + e];
-        default: if (MAXEW == EW_64) 
+        default: if (MAXEW == EW_64)
                  for (int e = 0; e < N_FU*(ELENB/8); e++) fu_carry[e*8] = operand_v0_t_q[vl_q + e];
       endcase
     end
@@ -1853,7 +1853,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
 
   // Generate dynamic carry-in bits from v0.t mask register
   logic [N_IPU*ELENB-1:0] ipu_carry;
-  
+
   always_comb begin
     ipu_carry = '0;
     if (spatz_req.op_arith.use_carry_borrow_in) begin
@@ -1861,7 +1861,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
         EW_8:  for (int e = 0; e < N_IPU*(ELENB);   e++) ipu_carry[e]   = operand_v0_t_q[vl_q + e];
         EW_16: for (int e = 0; e < N_IPU*(ELENB/2); e++) ipu_carry[e*2] = operand_v0_t_q[vl_q + e];
         EW_32: for (int e = 0; e < N_IPU*(ELENB/4); e++) ipu_carry[e*4] = operand_v0_t_q[vl_q + e];
-        default: if (MAXEW == EW_64) 
+        default: if (MAXEW == EW_64)
                  for (int e = 0; e < N_IPU*(ELENB/8); e++) ipu_carry[e*8] = operand_v0_t_q[vl_q + e];
       endcase
     end

@@ -261,7 +261,7 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
           saturated_o = subtractor_result[ew];
         end
         VSSUB                            : begin
-          // If the operands are of different signs and result sign is not equeal to op2 sign - there is overflow 
+          // If the operands are of different signs and result sign is not equeal to op2 sign - there is overflow
           automatic logic ovf = (arith_op2[ew-1] != arith_op1[ew-1]) && (subtractor_result[ew-1] != arith_op2[ew-1]);
           // Build min and max value based on the sign
           automatic data_t sat = arith_op2[ew-1] ? (Width'(1) << (ew-1)) : ((Width'(1) << (ew-1)) - Width'(1));
