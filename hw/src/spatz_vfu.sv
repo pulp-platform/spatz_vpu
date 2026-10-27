@@ -579,7 +579,7 @@ module spatz_vfu
 
     // The signal to choose comparison instructions  
   logic is_cmp_req;
-  assign is_cmp_req = (spatz_req.op == VFCMP) || spatz_req.op inside {VMSEQ, VMSNE, VMSLT, VMSLTU, VMSLE, VMSLEU, VMSGT, VMSGTU};
+  assign is_cmp_req = (spatz_req.op == VFCMP) || spatz_req.op inside {VMSEQ, VMSNE, VMSLT, VMSLTU, VMSLE, VMSLEU, VMSGT, VMSGTU, VMADC, VMSBC};
 
   // Ordered reduction bookkeeping
   vlen_t     ord_idx_d, ord_idx_q;     // index of the next element to add
@@ -636,7 +636,7 @@ module spatz_vfu
 
   logic switch_to_read_v0t;
   assign switch_to_read_v0t = (operand_state_q == READ_OPERANDS) && spatz_req_valid
-                          && !spatz_req.op_arith.is_scalar && !spatz_req.op_arith.vm
+                          && !spatz_req.op_arith.is_scalar && (!spatz_req.op_arith.vm || spatz_req.op_arith.use_carry_borrow_in)
                           && !v0_t_read_done && !spatz_req.op_arith.is_reduction;
 
   always_comb begin: operand_selection
@@ -1710,8 +1710,23 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
   logic     [N_IPU*ELENB-1:0] int_ipu_saturated;
   logic                       int_ipu_result_ready;
   logic     [N_IPU-1:0]       int_ipu_busy;
+  logic     [N_IPU*ELENB-1:0] int_ipu_carry;
 
   assign is_ipu_busy = |int_ipu_busy;
+
+  logic [N_FU*ELENB-1:0] fu_carry;
+  always_comb begin
+    fu_carry = '0;
+    if (spatz_req.op_arith.use_carry_borrow_in) begin
+      unique case (spatz_req.vtype.vsew)
+        EW_8:  for (int e = 0; e < N_FU*(ELENB);   e++) fu_carry[e]   = operand_v0_t_q[vl_q + e];
+        EW_16: for (int e = 0; e < N_FU*(ELENB/2); e++) fu_carry[e*2] = operand_v0_t_q[vl_q + e];
+        EW_32: for (int e = 0; e < N_FU*(ELENB/4); e++) fu_carry[e*4] = operand_v0_t_q[vl_q + e];
+        default: if (MAXEW == EW_64) 
+                 for (int e = 0; e < N_FU*(ELENB/8); e++) fu_carry[e*8] = operand_v0_t_q[vl_q + e];
+      endcase
+    end
+  end
 
   logic [N_FU*ELEN-1:0] ipu_wide_operand1, ipu_wide_operand2, ipu_wide_operand3;
   always_comb begin: gen_ipu_widening
@@ -1783,6 +1798,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       int_ipu_operand1 = ipu_wide_operand1[ipu_operand_pnt_q*ELEN*N_IPU +: ELEN*N_IPU];
       int_ipu_operand2 = ipu_wide_operand2[ipu_operand_pnt_q*ELEN*N_IPU +: ELEN*N_IPU];
       int_ipu_operand3 = ipu_wide_operand3[ipu_operand_pnt_q*ELEN*N_IPU +: ELEN*N_IPU];
+      int_ipu_carry    = fu_carry[ipu_operand_pnt_q*ELENB*N_IPU +: ELENB*N_IPU];
       if (spatz_req_valid && operands_ready && &int_ipu_in_ready && !is_fpu_insn) begin
         ipu_operand_pnt_d = ipu_operand_pnt_q + 1;
         if (ipu_operand_pnt_d == '0 || !(&valid_operations[ipu_operand_pnt_d*ELENB*N_IPU +: ELENB*N_IPU]))
@@ -1827,11 +1843,28 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
     assign int_ipu_operand1     = ipu_wide_operand1;
     assign int_ipu_operand2     = ipu_wide_operand2;
     assign int_ipu_operand3     = ipu_wide_operand3;
+    assign int_ipu_carry        = fu_carry;
     assign ipu_result           = int_ipu_result;
     assign ipu_result_valid     = int_ipu_result_valid;
     assign ipu_saturated        = int_ipu_saturated;
     assign int_ipu_result_ready = result_ready;
     assign ipu_result_tag       = int_ipu_result_tag[0];
+  end
+
+  // Generate dynamic carry-in bits from v0.t mask register
+  logic [N_IPU*ELENB-1:0] ipu_carry;
+  
+  always_comb begin
+    ipu_carry = '0;
+    if (spatz_req.op_arith.use_carry_borrow_in) begin
+      unique case (spatz_req.vtype.vsew)
+        EW_8:  for (int e = 0; e < N_IPU*(ELENB);   e++) ipu_carry[e]   = operand_v0_t_q[vl_q + e];
+        EW_16: for (int e = 0; e < N_IPU*(ELENB/2); e++) ipu_carry[e*2] = operand_v0_t_q[vl_q + e];
+        EW_32: for (int e = 0; e < N_IPU*(ELENB/4); e++) ipu_carry[e*4] = operand_v0_t_q[vl_q + e];
+        default: if (MAXEW == EW_64) 
+                 for (int e = 0; e < N_IPU*(ELENB/8); e++) ipu_carry[e*8] = operand_v0_t_q[vl_q + e];
+      endcase
+    end
   end
 
   for (genvar ipu = 0; unsigned'(ipu) < N_IPU; ipu++) begin : gen_ipus
@@ -1857,7 +1890,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       .op_s2_i          (int_ipu_operand2[ipu*ELEN +: ELEN]                                                              ),
       .op_d_i           (int_ipu_operand3[ipu*ELEN +: ELEN]                                                              ),
       .tag_i            (input_tag                                                                                       ),
-      .carry_i          ('0                                                                                              ),
+      .carry_i          (int_ipu_carry[ipu*ELENB +: ELENB]                                                                                             ),
       .sew_i            (sew                                                                                             ),
       .be_o             (/* Unused */                                                                                    ),
       .result_o         (int_ipu_result[ipu*ELEN +: ELEN]                                                                ),

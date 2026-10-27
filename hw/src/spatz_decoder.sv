@@ -595,13 +595,16 @@ module spatz_decoder
             riscv_instr::VADC_VVM,
             riscv_instr::VADC_VXM,
             riscv_instr::VADC_VIM: begin
-              spatz_req.op = VADC;
+              spatz_req.op                           = VADC;
+              spatz_req.op_arith.use_carry_borrow_in = 1'b1;
+              spatz_req.op_arith.vm                  = 1'b1;
             end
 
             riscv_instr::VMADC_VV,
             riscv_instr::VMADC_VX,
             riscv_instr::VMADC_VI: begin
               spatz_req.op = VMADC;
+              spatz_req.op_arith.vm = 1'b1;
             end
 
             riscv_instr::VMADC_VVM,
@@ -609,22 +612,27 @@ module spatz_decoder
             riscv_instr::VMADC_VIM: begin
               spatz_req.op                           = VMADC;
               spatz_req.op_arith.use_carry_borrow_in = 1'b1;
+              spatz_req.op_arith.vm                  = 1'b1;
             end
 
             riscv_instr::VSBC_VVM,
             riscv_instr::VSBC_VXM: begin
-              spatz_req.op = VSBC;
+              spatz_req.op                           = VSBC;
+              spatz_req.op_arith.use_carry_borrow_in = 1'b1;
+              spatz_req.op_arith.vm                  = 1'b1;
             end
 
             riscv_instr::VMSBC_VV,
             riscv_instr::VMSBC_VX: begin
               spatz_req.op = VMSBC;
+              spatz_req.op_arith.vm                  = 1'b1;
             end
 
             riscv_instr::VMSBC_VVM,
             riscv_instr::VMSBC_VXM: begin
               spatz_req.op                           = VMSBC;
               spatz_req.op_arith.use_carry_borrow_in = 1'b1;
+              spatz_req.op_arith.vm                  = 1'b1;
             end
 
             // Reductions

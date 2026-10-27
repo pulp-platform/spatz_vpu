@@ -744,7 +744,7 @@ module spatz_controller
           if (span_vd[v]) read_table_d[v][spatz_req.id] = 1'b1;
       end
       // tackling v0 RAW hazard
-      if (!spatz_req.op_arith.vm) begin
+      if (!spatz_req.op_arith.vm || spatz_req.op_arith.use_carry_borrow_in) begin
         scoreboard_d[spatz_req.id].deps[write_table_d[0].id] |= write_table_d[0].valid;
         read_table_d[0][spatz_req.id] = 1'b1;
       end
