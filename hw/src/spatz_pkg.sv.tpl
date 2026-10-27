@@ -576,6 +576,11 @@ package spatz_pkg;
     widen_fp8_to_fp16.sign     = operand.sign;
     widen_fp8_to_fp16.exponent = operand.exponent;
     widen_fp8_to_fp16.mantissa = {operand.mantissa, 8'b0};
+  
+  function automatic spatz_fp16alt_t widen_fp8_to_fp16alt(spatz_fp8_t operand);
+    widen_fp8_to_fp16alt.sign     = operand.sign;
+    widen_fp8_to_fp16alt.exponent = (operand.exponent == '0) ? '0 : operand.exponent + 112;
+    widen_fp8_to_fp16alt.mantissa = {operand.mantissa, 5'b0};
   endfunction
 
   function automatic spatz_fp16_t widen_fp8alt_to_fp16(spatz_fp8alt_t operand);

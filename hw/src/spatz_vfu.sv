@@ -422,9 +422,12 @@ module spatz_vfu
             fpu_vectorial_op = 1'b1;
           end
           EW_8: begin
-            fpu_src_fmt      = spatz_req.op_arith.is_narrowing ? (spatz_req.fm.src ? fpnew_pkg::FP16ALT : fpnew_pkg::FP16) :
-                   (spatz_req.op_arith.widen_vs1 || spatz_req.op_arith.widen_vs2) ? (spatz_req.fm.dst ? fpnew_pkg::FP16ALT : fpnew_pkg::FP16) :
-                   (spatz_req.fm.src ? fpnew_pkg::FP8ALT : fpnew_pkg::FP8);
+            if (spatz_req.op_arith.is_narrowing)
+              fpu_src_fmt = spatz_req.fm.src ? fpnew_pkg::FP16ALT : fpnew_pkg::FP16;
+            else if (spatz_req.op_arith.widen_vs1 || spatz_req.op_arith.widen_vs2)
+              fpu_src_fmt = spatz_req.fm.dst ? fpnew_pkg::FP16ALT : fpnew_pkg::FP16;
+            else
+              fpu_src_fmt = spatz_req.fm.src ? fpnew_pkg::FP8ALT  : fpnew_pkg::FP8;
             fpu_dst_fmt      = spatz_req.op_arith.widen_vs1 || spatz_req.op_arith.widen_vs2 || spatz_req.op == VSDOTP          ? (spatz_req.fm.dst ? fpnew_pkg::FP16ALT : fpnew_pkg::FP16) : (spatz_req.fm.dst ? fpnew_pkg::FP8ALT : fpnew_pkg::FP8);
             fpu_int_fmt      = spatz_req.op_arith.is_narrowing && spatz_req.op inside {VI2F, VU2F}                             ? fpnew_pkg::INT16 : fpnew_pkg::INT8;
             fpu_vectorial_op = 1'b1;
@@ -1796,15 +1799,23 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
         end
         EW_8: begin
           for (int el = 0; el < (MAXEW == EW_64 ? 4*N_FPU : 2*N_FPU); el++) begin
-            if (spatz_req.op_arith.widen_vs1)
-              wide_operand1[16*el +: 16] = !spatz_req.fm.src ? widen_fp8_to_fp16(shift_operand1[8*el +: 8])
-                                         : spatz_req.fm.dst  ? widen_fp8alt_to_fp16alt(shift_operand1[8*el +: 8])
-                                                             : widen_fp8alt_to_fp16   (shift_operand1[8*el +: 8]);
+            if (spatz_req.op_arith.widen_vs1) begin
+              unique case ({spatz_req.fm.src, spatz_req.fm.dst})
+                2'b00:  wide_operand1[16*el +: 16] = widen_fp8_to_fp16(shift_operand1[8*el +: 8]);
+                2'b01:  wide_operand1[16*el +: 16] = widen_fp8_to_fp16alt(shift_operand1[8*el +: 8]);
+                2'b10:  wide_operand1[16*el +: 16] = widen_fp8alt_to_fp16(shift_operand1[8*el +: 8]);
+                2'b11:  wide_operand1[16*el +: 16] = widen_fp8alt_to_fp16alt(shift_operand1[8*el +: 8]);
+              endcase
+            end
 
-            if (spatz_req.op_arith.widen_vs2)
-              wide_operand2[16*el +: 16] = !spatz_req.fm.src ? widen_fp8_to_fp16(shift_operand2[8*el +: 8])
-                                         : spatz_req.fm.dst  ? widen_fp8alt_to_fp16alt(shift_operand2[8*el +: 8])
-                                                             : widen_fp8alt_to_fp16   (shift_operand2[8*el +: 8]);
+            if (spatz_req.op_arith.widen_vs2) begin
+              unique case ({spatz_req.fm.src, spatz_req.fm.dst})
+                2'b00:  wide_operand2[16*el +: 16] = widen_fp8_to_fp16(shift_operand2[8*el +: 8]);
+                2'b01:  wide_operand2[16*el +: 16] = widen_fp8_to_fp16alt(shift_operand2[8*el +: 8]);
+                2'b10:  wide_operand2[16*el +: 16] = widen_fp8alt_to_fp16(shift_operand2[8*el +: 8]);
+                2'b11:  wide_operand2[16*el +: 16] = widen_fp8alt_to_fp16alt(shift_operand2[8*el +: 8]);
+              endcase
+            end
           end
         end
         default:;
