@@ -36,7 +36,7 @@ package spatz_pkg;
   // Maximum size of a single vector element in bytes
   localparam int unsigned ELENB  = ELEN / 8;
   // Number of bits in a vector register
-  localparam int unsigned VLEN   = 512;
+  localparam int unsigned VLEN   = 256;
   // Number of bytes in a vector register
   localparam int unsigned VLENB  = VLEN / 8;
   // Maximum vector length in elements
@@ -79,7 +79,7 @@ package spatz_pkg;
   localparam int unsigned NrParallelInstructions = 4;
 `endif
 
-  localparam bit divsqrt_is_shared = 1;
+  localparam bit divsqrt_is_shared = 0;
 
 
   // Largest element width that Spatz supports
