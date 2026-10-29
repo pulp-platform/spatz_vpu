@@ -251,6 +251,8 @@ module spatz_vlsu
       .usage_o   (/* Unused */    )
     );
     assign rob_rvalid[port] = !rob_empty[port];
+    assign rob_rid[port]    = '0;
+    assign rob_id[port]     = '0;
 `endif
   end: gen_rob
 

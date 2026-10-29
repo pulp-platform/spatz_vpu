@@ -245,6 +245,8 @@ module spatz_doublebw_vlsu
         .usage_o   (/* Unused */        )
       );
       assign rob_rvalid[intf][fu] = !rob_empty[intf][fu];
+      assign rob_rid[intf][fu]    = '0;
+      assign rob_id[intf][fu]     = '0;
 `endif
     end: gen_rob_intf_fu
   end: gen_rob_intf
