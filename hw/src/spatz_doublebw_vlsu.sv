@@ -107,6 +107,13 @@ module spatz_doublebw_vlsu
   // Convert the vl to number of bytes for all element widths
   always_comb begin: proc_spatz_req
     spatz_req_d = spatz_req_i;
+    
+    if (spatz_req_i.op == VLRE || spatz_req_i.op == VSR) begin
+      spatz_req_d.vl             = ({1'b0, spatz_req_i.nf} + 4'd1) * (VLEN / 8);
+      spatz_req_d.vtype.vsew     = EW_8;
+      spatz_req_d.op_mem.vm      = 1'b1;
+      spatz_req_d.vstart         = spatz_req_i.vstart;
+    end
 
     unique case (spatz_req_i.vtype.vsew)
       EW_8: begin
@@ -130,7 +137,7 @@ module spatz_doublebw_vlsu
 
   // Do we have a unit strided memory access
   logic mem_is_unit_strided;
-  assign mem_is_unit_strided = mem_spatz_req_valid && ((mem_spatz_req.op == VLE) || (mem_spatz_req.op == VSE));
+  assign mem_is_unit_strided = mem_spatz_req_valid && ((mem_spatz_req.op == VLE) || (mem_spatz_req.op == VSE) || (mem_spatz_req.op == VLRE) || (mem_spatz_req.op == VSR));
 
   // Do we have a strided memory access
   logic mem_is_strided;

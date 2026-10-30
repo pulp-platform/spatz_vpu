@@ -93,6 +93,9 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
     endcase // operation_i
   end       // arith_operands
 
+  int unsigned carry_pos;
+  assign carry_pos = (8 << sew_i) < Width ? (8 << sew_i) : Width;
+
   assign adder_result      = operation_valid_i ? $signed(arith_op2) + $signed(arith_op1) + carry_i : '0;
   assign subtractor_result = operation_valid_i ? $signed(arith_op2) - $signed(arith_op1) - carry_i : '0;
 
@@ -258,7 +261,7 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
           saturated_o = subtractor_result[ew];
         end
         VSSUB                            : begin
-          // If the operands are of different signs and result sign is not equeal to op2 sign - there is overflow 
+          // If the operands are of different signs and result sign is not equeal to op2 sign - there is overflow
           automatic logic ovf = (arith_op2[ew-1] != arith_op1[ew-1]) && (subtractor_result[ew-1] != arith_op2[ew-1]);
           // Build min and max value based on the sign
           automatic data_t sat = arith_op2[ew-1] ? (Width'(1) << (ew-1)) : ((Width'(1) << (ew-1)) - Width'(1));
@@ -291,8 +294,8 @@ module spatz_simd_lane import spatz_pkg::*; import rvv_pkg::vew_e; #(
             if (sew_i == rvv_pkg::vew_e'(i))
               simd_result = mult_result[8*(2**i) +: Width];
         end
-        VMADC                   : simd_result = Width'(adder_result[Width]);
-        VMSBC                   : simd_result = Width'(subtractor_result[Width]);
+        VMADC                   : simd_result = Width'(adder_result[carry_pos]);
+        VMSBC                   : simd_result = Width'(subtractor_result[carry_pos]);
         VDIV, VDIVU, VREM, VREMU: begin
           simd_result    = div_result;
           result_valid_o = div_out_valid;

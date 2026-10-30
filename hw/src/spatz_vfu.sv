@@ -211,7 +211,10 @@ module spatz_vfu
     Reduction_IntraLane,
     Reduction_InterLane,
     Reduction_SIMD,
-    Reduction_WriteBack
+    Reduction_WriteBack,
+    Reduction_OrdFetch,
+    Reduction_OrdLoad,
+    Reduction_OrdWait
    } reduction_state_t;
    reduction_state_t reduction_state_d, reduction_state_q;
   `FF(reduction_state_q, reduction_state_d, Reduction_NormalExecution)
@@ -574,9 +577,43 @@ module spatz_vfu
   logic [VLEN-1:0] cmp_mask_dst_q;
   assign cmp_mask_dst_q = {cmp_mask_dst_hi_q, cmp_mask_dst_lo_q};
 
-    // The signal to choose comparison instructions  
+    // The signal to choose comparison instructions
   logic is_cmp_req;
-  assign is_cmp_req = (spatz_req.op == VFCMP) || spatz_req.op inside {VMSEQ, VMSNE, VMSLT, VMSLTU, VMSLE, VMSLEU, VMSGT, VMSGTU};
+  assign is_cmp_req = (spatz_req.op == VFCMP) || spatz_req.op inside {VMSEQ, VMSNE, VMSLT, VMSLTU, VMSLE, VMSLEU, VMSGT, VMSGTU, VMADC, VMSBC};
+
+  // Ordered reduction bookkeeping
+  vlen_t     ord_idx_d, ord_idx_q;     // index of the next element to add
+  vrf_data_t ord_word_d, ord_word_q;   // VRF word currently being consumed
+  `FF(ord_idx_q,  ord_idx_d,  '0)
+  `FF(ord_word_q, ord_word_d, '0)
+
+  vlen_t ord_idx_next;
+  logic  ord_last, ord_need_word, ord_elem_active;
+  elen_t ord_elem, ord_dst_mask;
+
+  always_comb begin: proc_ordered_helpers
+    automatic vew_e dst_sew = vew_e'(spatz_req.vtype.vsew + (spatz_req.op_arith.widen_vs1 || spatz_req.op_arith.widen_vs2));
+    automatic vlen_t idx_in_word = ord_idx_q & (vlen_t'(nr_elem_word) - 1);
+
+    ord_idx_next    = ord_idx_q + 1;
+    ord_last        = (ord_idx_next >= spatz_req.vl);
+    ord_need_word   = ((ord_idx_next & (vlen_t'(nr_elem_word) - 1)) == '0);
+    ord_elem_active = spatz_req.op_arith.vm || reduction_operand_v0_t_q[ord_idx_q];
+
+    unique case (spatz_req.vtype.vsew)
+      EW_8 :   ord_elem = elen_t'(ord_word_q[8*idx_in_word  +: 8 ]);
+      EW_16:   ord_elem = elen_t'(ord_word_q[16*idx_in_word +: 16]);
+      EW_32:   ord_elem = elen_t'(ord_word_q[32*idx_in_word +: 32]);
+      default: ord_elem = elen_t'(ord_word_q[64*idx_in_word +: 64]);
+    endcase
+
+    unique case (dst_sew)
+      EW_8 :   ord_dst_mask = elen_t'(8'hff);
+      EW_16:   ord_dst_mask = elen_t'(16'hffff);
+      EW_32:   ord_dst_mask = elen_t'(32'hffff_ffff);
+      default: ord_dst_mask = '1;
+    endcase
+  end
 
   // FSM to manage operands between normal calculation and v0.t fetching
   logic v0_t_is_ready;
@@ -599,7 +636,7 @@ module spatz_vfu
 
   logic switch_to_read_v0t;
   assign switch_to_read_v0t = (operand_state_q == READ_OPERANDS) && spatz_req_valid
-                          && !spatz_req.op_arith.is_scalar && !spatz_req.op_arith.vm
+                          && !spatz_req.op_arith.is_scalar && (!spatz_req.op_arith.vm || spatz_req.op_arith.use_carry_borrow_in)
                           && !v0_t_read_done && !spatz_req.op_arith.is_reduction;
 
   always_comb begin: operand_selection
@@ -772,7 +809,20 @@ module spatz_vfu
     end
   end : proc_fpu_result_mux
 
-  assign scalar_result = (spatz_req.op_arith.is_scalar || result_tag.last) ? result[ELEN-1:0] : '0;
+  always_comb begin : proc_scalar_result
+    scalar_result = '0;
+    if (spatz_req.op_arith.is_scalar || result_tag.last) begin
+      scalar_result = result[ELEN-1:0];
+      if (spatz_req.op_arith.is_int_scalar_move) begin
+        unique case (spatz_req.vtype.vsew)
+          EW_8:    scalar_result = elen_t'($signed(result[7:0]));
+          EW_16:   scalar_result = elen_t'($signed(result[15:0]));
+          EW_32:   scalar_result = elen_t'($signed(result[31:0]));
+          default: scalar_result = result[ELEN-1:0];
+        endcase
+      end
+    end
+  end : proc_scalar_result
 
   `FF(divsqrt_slot_q, divsqrt_slot_d, '0)
 
@@ -917,6 +967,8 @@ module spatz_vfu
     reduction_vector_data = '0;
     reduction_scalar_data = '0;
     result_buf_tag_d = result_buf_tag_q;
+    ord_idx_d  = ord_idx_q;
+    ord_word_d = ord_word_q;
 
     // No operands
     reduction_d               = reduction_q;
@@ -933,7 +985,7 @@ module spatz_vfu
 
     // Only request when initializing the reduction register
     reduction_operand_request[0] = (reduction_state_q == Reduction_Init) || !spatz_req.op_arith.is_reduction;
-    reduction_operand_request[1] = (reduction_state_q inside {Reduction_Init, Reduction_Reduce}) || !spatz_req.op_arith.is_reduction;
+    reduction_operand_request[1] = (reduction_state_q inside {Reduction_Init, Reduction_Reduce, Reduction_OrdFetch}) || !spatz_req.op_arith.is_reduction;
 
     result_buf_d = result_buf_q;
     result_buf_valid_d = result_buf_valid_q;
@@ -1069,15 +1121,25 @@ module spatz_vfu
         endcase
         // verilator lint_on SELRANGE
         if (vrf_rvalid_i[0] && vrf_rvalid_i[1]) begin
-          reduction_operand_ready_d = 1'b1;
-          reduction_pointer_d = reduction_pointer_q + 1;
-          reduction_state_d = Reduction_Reduce;
+          if (spatz_req.op_arith.is_ordered) begin
+            // acc <- scalar init (dest width). Latch vector word 0 and consume it element by element.
+            reduction_d[0]    = vrf_data_t'(vrf_rdata_i[0][ELEN-1:0] & ord_dst_mask);
+            reduction_d[1]    = '0;
+            ord_word_d        = vrf_rdata_i[1];
+            ord_idx_d         = '0;
+            word_issued       = 1'b1;               // word 0 consumed, advance the read address
+            reduction_state_d = Reduction_OrdLoad;
+          end else begin
+            reduction_operand_ready_d = 1'b1;
+            reduction_pointer_d = reduction_pointer_q + 1;
+            reduction_state_d = Reduction_Reduce;
 
-          // Request next word
-          word_issued = is_fpu_insn ? 1'b1 : (VRFWordWidth==ELEN*N_IPU) ? 1'b1 : !(|pnt) ? 1'b1 : 1'b0;
-          if (reduction_pointer_q == fill_cnt) begin
-            reduction_state_d = Reduction_IntraLane;
-            reduction_pointer_d = '0;
+            // Request next word
+            word_issued = is_fpu_insn ? 1'b1 : (VRFWordWidth==ELEN*N_IPU) ? 1'b1 : !(|pnt) ? 1'b1 : 1'b0;
+            if (reduction_pointer_q == fill_cnt) begin
+              reduction_state_d = Reduction_IntraLane;
+              reduction_pointer_d = '0;
+            end
           end
         end
       end
@@ -1275,6 +1337,50 @@ module spatz_vfu
         end
       end
 
+      Reduction_OrdFetch: begin
+        if (vrf_rvalid_i[1]) begin
+          ord_word_d        = vrf_rdata_i[1];
+          word_issued       = 1'b1;
+          reduction_state_d = Reduction_OrdLoad;
+        end
+      end
+
+      Reduction_OrdLoad: begin
+        if (ord_elem_active) begin
+          // operand1 = element, operand2 = accumulator (still in reduction_q[0])
+          reduction_d[1]            = vrf_data_t'(ord_elem);
+          reduction_operand_ready_d = 1'b1;       // pulses op1_is_ready next cycle -> one FPU issue
+          reduction_state_d         = Reduction_OrdWait;
+        end else begin
+          // masked-off element: skip, no FPU operation
+          ord_idx_d = ord_idx_next;
+          if (ord_last) begin
+            result_buf_d       = reduction_q[0];
+            result_buf_valid_d = 1'b1;
+            result_buf_tag_d   = input_tag;
+            reduction_state_d  = Reduction_WriteBack;
+          end else begin
+            reduction_state_d  = ord_need_word ? Reduction_OrdFetch : Reduction_OrdLoad;
+          end
+        end
+      end
+
+      Reduction_OrdWait: begin
+        if (result_valid[0]) begin
+          result_ready   = 1'b1;
+          reduction_d[0] = vrf_data_t'(result[ELEN-1:0] & ord_dst_mask);   // new accumulator
+          ord_idx_d      = ord_idx_next;
+          if (ord_last) begin
+            result_buf_d       = vrf_data_t'(result[ELEN-1:0] & ord_dst_mask);
+            result_buf_valid_d = 1'b1;
+            result_buf_tag_d   = input_tag;
+            reduction_state_d  = Reduction_WriteBack;
+          end else begin
+            reduction_state_d  = ord_need_word ? Reduction_OrdFetch : Reduction_OrdLoad;
+          end
+        end
+      end
+
       default;
     endcase
   end: proc_reduction
@@ -1341,13 +1447,13 @@ module spatz_vfu
 
           // Did we commit a word already?
           if (word_issued) begin
-            vreg_addr_d[0] = vreg_addr_d[0] + (!spatz_req.op_arith.widen_vs2 || widening_upper_q);
-            vreg_addr_d[1] = vreg_addr_d[1] + (!spatz_req.op_arith.widen_vs1 || widening_upper_q);
+            vreg_addr_d[0] = vreg_addr_d[0] + (!spatz_req.op_arith.widen_vs2 || widening_upper_q || spatz_req.op_arith.is_ordered);
+            vreg_addr_d[1] = vreg_addr_d[1] + (!spatz_req.op_arith.widen_vs1 || widening_upper_q || spatz_req.op_arith.is_ordered);
             vreg_addr_d[2] = vreg_addr_d[2] + (!spatz_req.op_arith.is_reduction && (!spatz_req.op_arith.is_narrowing || narrowing_upper_q) && !is_cmp_req);
           end
           end else if (spatz_req_valid && vl_q < spatz_req.vl && word_issued) begin
-            vreg_addr_d[0] = vreg_addr_q[0] + (!spatz_req.op_arith.widen_vs2 || widening_upper_q);
-            vreg_addr_d[1] = vreg_addr_q[1] + (!spatz_req.op_arith.widen_vs1 || widening_upper_q);
+            vreg_addr_d[0] = vreg_addr_q[0] + (!spatz_req.op_arith.widen_vs2 || widening_upper_q || spatz_req.op_arith.is_ordered);
+            vreg_addr_d[1] = vreg_addr_q[1] + (!spatz_req.op_arith.widen_vs1 || widening_upper_q || spatz_req.op_arith.is_ordered);
             vreg_addr_d[2] = vreg_addr_q[2] + (!spatz_req.op_arith.is_reduction && (!spatz_req.op_arith.is_narrowing || narrowing_upper_q) && !is_cmp_req);
           end
         end
@@ -1603,8 +1709,23 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
   logic     [N_IPU*ELENB-1:0] int_ipu_saturated;
   logic                       int_ipu_result_ready;
   logic     [N_IPU-1:0]       int_ipu_busy;
+  logic     [N_IPU*ELENB-1:0] int_ipu_carry;
 
   assign is_ipu_busy = |int_ipu_busy;
+
+  logic [N_FU*ELENB-1:0] fu_carry;
+  always_comb begin
+    fu_carry = '0;
+    if (spatz_req.op_arith.use_carry_borrow_in) begin
+      unique case (spatz_req.vtype.vsew)
+        EW_8:  for (int e = 0; e < N_FU*(ELENB);   e++) fu_carry[e]   = operand_v0_t_q[vl_q + e];
+        EW_16: for (int e = 0; e < N_FU*(ELENB/2); e++) fu_carry[e*2] = operand_v0_t_q[vl_q + e];
+        EW_32: for (int e = 0; e < N_FU*(ELENB/4); e++) fu_carry[e*4] = operand_v0_t_q[vl_q + e];
+        default: if (MAXEW == EW_64)
+                 for (int e = 0; e < N_FU*(ELENB/8); e++) fu_carry[e*8] = operand_v0_t_q[vl_q + e];
+      endcase
+    end
+  end
 
   logic [N_FU*ELEN-1:0] ipu_wide_operand1, ipu_wide_operand2, ipu_wide_operand3;
   always_comb begin: gen_ipu_widening
@@ -1676,6 +1797,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       int_ipu_operand1 = ipu_wide_operand1[ipu_operand_pnt_q*ELEN*N_IPU +: ELEN*N_IPU];
       int_ipu_operand2 = ipu_wide_operand2[ipu_operand_pnt_q*ELEN*N_IPU +: ELEN*N_IPU];
       int_ipu_operand3 = ipu_wide_operand3[ipu_operand_pnt_q*ELEN*N_IPU +: ELEN*N_IPU];
+      int_ipu_carry    = fu_carry[ipu_operand_pnt_q*ELENB*N_IPU +: ELENB*N_IPU];
       if (spatz_req_valid && operands_ready && &int_ipu_in_ready && !is_fpu_insn) begin
         ipu_operand_pnt_d = ipu_operand_pnt_q + 1;
         if (ipu_operand_pnt_d == '0 || !(&valid_operations[ipu_operand_pnt_d*ELENB*N_IPU +: ELENB*N_IPU]))
@@ -1720,11 +1842,28 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
     assign int_ipu_operand1     = ipu_wide_operand1;
     assign int_ipu_operand2     = ipu_wide_operand2;
     assign int_ipu_operand3     = ipu_wide_operand3;
+    assign int_ipu_carry        = fu_carry;
     assign ipu_result           = int_ipu_result;
     assign ipu_result_valid     = int_ipu_result_valid;
     assign ipu_saturated        = int_ipu_saturated;
     assign int_ipu_result_ready = result_ready;
     assign ipu_result_tag       = int_ipu_result_tag[0];
+  end
+
+  // Generate dynamic carry-in bits from v0.t mask register
+  logic [N_IPU*ELENB-1:0] ipu_carry;
+
+  always_comb begin
+    ipu_carry = '0;
+    if (spatz_req.op_arith.use_carry_borrow_in) begin
+      unique case (spatz_req.vtype.vsew)
+        EW_8:  for (int e = 0; e < N_IPU*(ELENB);   e++) ipu_carry[e]   = operand_v0_t_q[vl_q + e];
+        EW_16: for (int e = 0; e < N_IPU*(ELENB/2); e++) ipu_carry[e*2] = operand_v0_t_q[vl_q + e];
+        EW_32: for (int e = 0; e < N_IPU*(ELENB/4); e++) ipu_carry[e*4] = operand_v0_t_q[vl_q + e];
+        default: if (MAXEW == EW_64)
+                 for (int e = 0; e < N_IPU*(ELENB/8); e++) ipu_carry[e*8] = operand_v0_t_q[vl_q + e];
+      endcase
+    end
   end
 
   for (genvar ipu = 0; unsigned'(ipu) < N_IPU; ipu++) begin : gen_ipus
@@ -1750,7 +1889,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       .op_s2_i          (int_ipu_operand2[ipu*ELEN +: ELEN]                                                              ),
       .op_d_i           (int_ipu_operand3[ipu*ELEN +: ELEN]                                                              ),
       .tag_i            (input_tag                                                                                       ),
-      .carry_i          ('0                                                                                              ),
+      .carry_i          (int_ipu_carry[ipu*ELENB +: ELENB]                                                                                             ),
       .sew_i            (sew                                                                                             ),
       .be_o             (/* Unused */                                                                                    ),
       .result_o         (int_ipu_result[ipu*ELEN +: ELEN]                                                                ),
@@ -1840,7 +1979,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       assign fpu_operand3 = (fpu_op == fpnew_pkg::ADD || spatz_req.op_arith.switch_rs1_rd) ? wide_operand1[fpu*ELEN +: ELEN] : wide_operand3[fpu*ELEN +: ELEN];
 
       logic int_fpu_in_valid;
-      assign int_fpu_in_valid = spatz_req_valid && operands_ready && (!spatz_req.op_arith.is_scalar || fpu == 0) && is_fpu_insn;
+      assign int_fpu_in_valid = spatz_req_valid && operands_ready && (!(spatz_req.op_arith.is_scalar || spatz_req.op_arith.is_ordered) || fpu == 0) && is_fpu_insn;
 
       // Generate an FPU pipeline
       elen_t fpu_operand1_q, fpu_operand2_q, fpu_operand3_q;

@@ -2573,9 +2573,8 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
       riscv_instr::VWMACCU_VV,
       riscv_instr::VWMACCSU_VV,
       riscv_instr::VMV_V_V,
+      riscv_instr::VCOMPRESS_VM,
       riscv_instr::VMV_V_I,
-      riscv_instr::VMERGE_VVM,
-      riscv_instr::VMERGE_VIM,
       riscv_instr::VFMV_F_S,
       riscv_instr::VSLIDEUP_VI,
       riscv_instr::VSLIDEDOWN_VI: begin
@@ -2703,7 +2702,6 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
       riscv_instr::VWMACCUS_VX,
       riscv_instr::VMV_V_X,
       riscv_instr::VMV_S_X,
-      riscv_instr::VMERGE_VXM,
       riscv_instr::VSLIDEUP_VX,
       riscv_instr::VSLIDEDOWN_VX,
       riscv_instr::VSLIDE1UP_VX,
@@ -2723,7 +2721,6 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
       riscv_instr::VFSUB_VF,
       riscv_instr::VFMIN_VF,
       riscv_instr::VFMAX_VF,
-      riscv_instr::VFMERGE_VFM,
       riscv_instr::VMFEQ_VF,
       riscv_instr::VMFNE_VF,
       riscv_instr::VMFLT_VF,
@@ -2797,7 +2794,23 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
       riscv_instr::VLUXEI8_V,
       riscv_instr::VLUXEI16_V,
       riscv_instr::VLUXEI32_V,
-      riscv_instr::VLUXEI64_V: begin
+      riscv_instr::VLUXEI64_V,
+      riscv_instr::VL1RE8_V,
+      riscv_instr::VL1RE16_V,
+      riscv_instr::VL1RE32_V,
+      riscv_instr::VL1RE64_V,
+      riscv_instr::VL2RE8_V,
+      riscv_instr::VL2RE16_V,
+      riscv_instr::VL2RE32_V,
+      riscv_instr::VL2RE64_V,
+      riscv_instr::VL4RE8_V,
+      riscv_instr::VL4RE16_V,
+      riscv_instr::VL4RE32_V,
+      riscv_instr::VL4RE64_V,
+      riscv_instr::VL8RE8_V,
+      riscv_instr::VL8RE16_V,
+      riscv_instr::VL8RE32_V,
+      riscv_instr::VL8RE64_V: begin
         if (RVV) begin
           write_rd        = 1'b0;
           uses_rd         = 1'b0;
@@ -2844,7 +2857,11 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
       riscv_instr::VSUXEI8_V,
       riscv_instr::VSUXEI16_V,
       riscv_instr::VSUXEI32_V,
-      riscv_instr::VSUXEI64_V: begin
+      riscv_instr::VSUXEI64_V,
+      riscv_instr::VS1R_V,
+      riscv_instr::VS2R_V,
+      riscv_instr::VS4R_V,
+      riscv_instr::VS8R_V: begin
         if (RVV) begin
           write_rd        = 1'b0;
           uses_rd         = 1'b0;
@@ -2897,10 +2914,15 @@ module snitch import snitch_pkg::*; import riscv_instr::*; #(
       end
     endcase
 
+    // If an instruction issued by accelerator, but resulted in an exception, trigger an illegal instruction
+    // Note: same cycle response expected
+    if (acc_qvalid_o && acc_qready_i && acc_qrsp_i.exception) begin
+      illegal_inst = 1'b1;
+    end
+
     // Sanitize illegal instructions so that they don't exert any side-effects.
     if (exception) begin
      write_rd = 1'b0;
-     acc_qvalid_o = 1'b0;
      next_pc = Exception;
     end
   end
