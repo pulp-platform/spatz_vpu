@@ -27,7 +27,7 @@ DEFAULT_SPATZ_CFG = {
     'spatz_fpu': True,
     'spatz_nports': 4,
     'double_bw': False,
-    'divsqrt_is_shared': False,
+    'divsqrt_is_shared': 1,
     'buf_fpu': 1,
     'isa': 'rv32imafd',
 }

@@ -9,6 +9,7 @@
     isa: "rv32imafd"
     spatz_nports: 4
     double_bw: false
+    divsqrt_is_shared: 1
     buf_fpu: 1
   }
 }

@@ -79,6 +79,9 @@ package spatz_pkg;
   localparam int unsigned NrParallelInstructions = 4;
 `endif
 
+  localparam bit divsqrt_is_shared = 1;
+
+
   // Largest element width that Spatz supports
   localparam vew_e MAXEW = RVD ? EW_64 : EW_32;
 
@@ -210,6 +213,7 @@ package spatz_pkg;
   typedef struct packed {
     logic vm;
     logic is_load;
+    logic is_ordered;
     vew_e ew;
   } op_mem_t;
 
