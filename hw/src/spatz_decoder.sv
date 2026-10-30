@@ -1112,10 +1112,17 @@ module spatz_decoder
               riscv_instr::VFDIV_VV,
               riscv_instr::VFDIV_VF: begin
                 spatz_req.op = VFDIV;
+                // FPnew divider does not support FP8
+                if (decoder_req_i.vtype.vsew == EW_8)
+                  illegal_instr = 1'b1;   // divsqrt without FP8
               end
 
               riscv_instr::VFSQRT_V: begin
+                // FPnew divider does not support FP8
                 spatz_req.op = VFSQRT;
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading v0 decreasing performances
+                if (decoder_req_i.vtype.vsew == EW_8)
+                  illegal_instr = 1'b1;   // divsqrt without FP8
               end
               riscv_instr::VFADD_VV,
               riscv_instr::VFADD_VF: spatz_req.op = VFADD;
@@ -1286,46 +1293,67 @@ module spatz_decoder
                 spatz_req.op = VFSGNJ;
                 spatz_req.rm = fpnew_pkg::RDN;
               end
-              riscv_instr::VFCVT_F_X_V    : spatz_req.op = VI2F;
-              riscv_instr::VFCVT_F_XU_V   : spatz_req.op = VU2F;
-              riscv_instr::VFCVT_X_F_V    : spatz_req.op = VF2I;
+              riscv_instr::VFCVT_F_X_V    : begin
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading vs1 decreasing performances
+                spatz_req.op = VI2F;
+              end
+              riscv_instr::VFCVT_F_XU_V   : begin
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading vs1 decreasing performances
+                spatz_req.op = VU2F;
+              end
+              riscv_instr::VFCVT_X_F_V    : begin
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading vs1 decreasing performances
+                spatz_req.op = VF2I;
+              end
               riscv_instr::VFCVT_RTZ_X_F_V: begin
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading vs1 decreasing performances
                 spatz_req.op = VF2I;
                 spatz_req.rm = fpnew_pkg::RTZ;
               end
-              riscv_instr::VFCVT_XU_F_V     : spatz_req.op = VF2U;
+              riscv_instr::VFCVT_XU_F_V     : begin
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading vs1 decreasing performances
+                spatz_req.op = VF2U;
+              end
               riscv_instr::VFCVT_RTZ_XU_F_V : begin
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading vs1 decreasing performances
                 spatz_req.op = VF2U;
                 spatz_req.rm = fpnew_pkg::RTZ;
               end
 
               riscv_instr::VFNCVT_F_X_W: begin
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading vs1 decreasing performances
                 spatz_req.op                    = VI2F;
                 spatz_req.op_arith.is_narrowing = 1'b1;
               end
               riscv_instr::VFNCVT_F_XU_W: begin
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading vs1 decreasing performances
                 spatz_req.op                    = VU2F;
                 spatz_req.op_arith.is_narrowing = 1'b1;
               end
               riscv_instr::VFNCVT_X_F_W: begin
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading vs1 decreasing performances
                 spatz_req.op                    = VF2I;
                 spatz_req.op_arith.is_narrowing = 1'b1;
               end
               riscv_instr::VFNCVT_RTZ_X_F_W: begin
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading vs1 decreasing performances
                 spatz_req.op                    = VF2I;
                 spatz_req.op_arith.is_narrowing = 1'b1;
                 spatz_req.rm                    = fpnew_pkg::RTZ;
               end
               riscv_instr::VFNCVT_XU_F_W: begin
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading vs1 decreasing performances
                 spatz_req.op                    = VF2U;
                 spatz_req.op_arith.is_narrowing = 1'b1;
               end
               riscv_instr::VFNCVT_RTZ_XU_F_W: begin
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading vs1 decreasing performances
                 spatz_req.op                    = VF2U;
                 spatz_req.op_arith.is_narrowing = 1'b1;
                 spatz_req.rm                    = fpnew_pkg::RTZ;
               end
               riscv_instr::VFNCVT_F_F_W: begin
+                spatz_req.use_vs2 = 1'b0;   // [19:15] is a sub-opcode, not a register. This avoids reading vs1 decreasing performances
                 spatz_req.op                    = VF2F;
                 spatz_req.op_arith.is_narrowing = 1'b1;
               end

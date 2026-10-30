@@ -619,6 +619,11 @@ module spatz_vfu
   vlen_t vl_q_plus_nr_elem_word;
   assign vl_q_plus_nr_elem_word = vl_q + nr_elem_word;
 
+  // v0.t bits of the VRF word being issued: bit i <-> element vl_q + i.
+  // One shifter shared by VMERGE and by the fpnew SIMD masks.
+  logic [VRFWordBWidth-1:0] word_v0;
+  assign word_v0 = VRFWordBWidth'(operand_v0_t_q >> vl_q);
+
   always_comb begin: operand_proc
     reduction_operand_v0_t_lo = '0;
     reduction_operand_v0_t_hi = '0;
@@ -667,11 +672,11 @@ module spatz_vfu
               automatic logic [N_FU*ELEN-1:0] mmask;
               mmask = '0;
               unique case (spatz_req.vtype.vsew)
-                EW_8:  for (int e = 0; e < N_FU*ELENB;   e++) mmask[e*8  +: 8]  = {8 {operand_v0_t_q[vl_q + e]}};
-                EW_16: for (int e = 0; e < N_FU*ELENB/2; e++) mmask[e*16 +: 16] = {16{operand_v0_t_q[vl_q + e]}};
-                EW_32: for (int e = 0; e < N_FU*ELENB/4; e++) mmask[e*32 +: 32] = {32{operand_v0_t_q[vl_q + e]}};
+                EW_8:  for (int e = 0; e < N_FU*ELENB;   e++) mmask[e*8  +: 8]  = {8 {word_v0[e]}};
+                EW_16: for (int e = 0; e < N_FU*ELENB/2; e++) mmask[e*16 +: 16] = {16{word_v0[e]}};
+                EW_32: for (int e = 0; e < N_FU*ELENB/4; e++) mmask[e*32 +: 32] = {32{word_v0[e]}};
                 default: if (MAXEW == EW_64)
-                      for (int e = 0; e < N_FU*ELENB/8; e++) mmask[e*64 +: 64] = {64{operand_v0_t_q[vl_q + e]}};
+                      for (int e = 0; e < N_FU*ELENB/8; e++) mmask[e*64 +: 64] = {64{word_v0[e]}};
               endcase
               operand1 = (operand1 & mmask) | (operand2 & ~mmask);
             end
@@ -1822,6 +1827,80 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       endcase
     end: gen_widening
 
+    // fpnew SIMD lanes per FPU (8: Width = 64 with FP8 enabled)
+    localparam int unsigned FpuNumLanes = fpnew_pkg::max_num_lanes(FPUFeatures.Width,
+                                            FPUFeatures.FpFmtMask, FPUFeatures.EnableVectors);
+
+    // Active elements of the operation being issued, one mask per FPU
+    logic [N_FPU-1:0] [FpuNumLanes-1:0] fpu_simd_mask;
+
+    vlen_t rem_elems;                      // number of remaining elements starting from vl_q
+    logic [VRFWordBWidth-1:0] word_tail;   // every bit equal to 1 represents an element < vl inside that word
+    logic [VRFWordBWidth-1:0] word_active; // it considers also the masking
+
+    assign rem_elems   = (vl_q < spatz_req.vl) ? spatz_req.vl - vl_q : '0;
+    assign word_tail   = (rem_elems >= VRFWordBWidth) ? '1 :
+                         ~({VRFWordBWidth{1'b1}} << rem_elems[$clog2(VRFWordBWidth)-1:0]);
+    assign word_active = word_tail & (spatz_req.op_arith.vm ? '1 : word_v0);
+
+    logic [$clog2(FPUFeatures.Width):0] widest_op_fmt; // widest format of the operation (bits)
+    logic [$clog2(FpuNumLanes):0] nr_elem_in_operand;  // elements per FPU operand: 1..FpuNumLanes
+    logic [FpuNumLanes-1:0] lane_used;                 // lanes holding an element of this format
+    logic noncomp;                                     // PARALLEL unit: strided mask bits
+    logic mask_en;                                     // the mask applies to this operation
+
+    // Per FPU: index in the VRF word of the first element of its slot and active elements of the slot
+    logic [N_FPU-1:0] [$clog2(VRFWordBWidth)-1:0] slot_base;
+    logic [N_FPU-1:0] [FpuNumLanes-1:0] el_mask;    // bit e = element e of the slot
+
+    // for each FPU compute an 8-bit mask (given by Width = 64 with FP8 enabled) --> simd_mask_i
+    // if bit n = 1 --> fpnew must consider lane n flags
+    always_comb begin : proc_fpu_simd_mask
+      // consider the largest format
+      widest_op_fmt = fpnew_pkg::fp_width(fpu_src_fmt) > fpnew_pkg::fp_width(fpu_dst_fmt) ?
+                      fpnew_pkg::fp_width(fpu_src_fmt) : fpnew_pkg::fp_width(fpu_dst_fmt);
+
+      // how many elements for each operand? (FPU width / widest format)
+      unique case (widest_op_fmt)
+        64:      nr_elem_in_operand = FPUFeatures.Width / 64;
+        32:      nr_elem_in_operand = FPUFeatures.Width / 32;
+        16:      nr_elem_in_operand = FPUFeatures.Width / 16;
+        default: nr_elem_in_operand = FPUFeatures.Width / 8;
+      endcase
+      if (!fpu_vectorial_op) nr_elem_in_operand = 1;
+
+      // the first nr_elem_in_operand lanes hold an element: the others (e.g. divsqrt lanes 2,3 in FP32) are dropped
+      lane_used = ~({FpuNumLanes{1'b1}} << nr_elem_in_operand);
+
+      // NONCOMP --> parallel unit type --> every bit of the mask corresponds to the byte at which the element begins
+      noncomp = fpnew_pkg::get_opgroup(fpu_op) == fpnew_pkg::NONCOMP;
+
+      // leave the simd_mask_i = '1 for all this kind of instructions
+      mask_en = !spatz_req.op_arith.is_scalar && !spatz_req.op_arith.is_reduction &&
+                !spatz_req.op_arith.widen_vs1 && !spatz_req.op_arith.widen_vs2 &&
+                !spatz_req.op_arith.is_narrowing && spatz_req.op != VSDOTP;
+
+      for (int unsigned fpu = 0; fpu < N_FPU; fpu++) begin
+        slot_base[fpu] = ((fpu == 0 && divsqrt_shared_active) ? divsqrt_slot_q : fpu) * nr_elem_in_operand;
+
+        // elements of this slot moved to the bottom, elements of the next slots dropped
+        el_mask[fpu] = FpuNumLanes'(word_active >> slot_base[fpu]) & lane_used;
+
+        if (fpu != 0 && divsqrt_shared_active)
+          // shared divsqrt: only FPU0 runs, the other FPUs get no operation
+          fpu_simd_mask[fpu] = '0;
+        else if (!mask_en)
+          fpu_simd_mask[fpu] = '1;
+        else if (!noncomp)
+          // MERGED: bit e = element e
+          fpu_simd_mask[fpu] = el_mask[fpu];
+        else
+          // PARALLEL: lane l belongs to element l * nr_elem_in_operand / FpuNumLanes
+          for (int unsigned l = 0; l < FpuNumLanes; l++)
+            fpu_simd_mask[fpu][l] = el_mask[fpu][(l * nr_elem_in_operand) >> $clog2(FpuNumLanes)];
+      end
+    end : proc_fpu_simd_mask
+
     for (genvar fpu = 0; unsigned'(fpu) < N_FPU; fpu++) begin : gen_fpnew
       logic int_fpu_result_valid;
       logic int_fpu_in_ready;
@@ -1845,6 +1924,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       // Generate an FPU pipeline
       elen_t fpu_operand1_q, fpu_operand2_q, fpu_operand3_q;
       operation_e fpu_op_q;
+      logic [FpuNumLanes-1:0] fpu_simd_mask_q;
       fp_format_e fpu_src_fmt_q, fpu_dst_fmt_q;
       int_format_e fpu_int_fmt_q;
       logic fpu_op_mode_q;
@@ -1875,7 +1955,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
       `FFL(rm_q, (spatz_req.op == VFCMP && spatz_req.rm == fpnew_pkg::RUP) ? fpnew_pkg::RDN : spatz_req.rm, int_fpu_in_valid && int_fpu_in_ready, fpnew_pkg::RNE)
       `FFL(input_tag_q, input_tag, int_fpu_in_valid && int_fpu_in_ready, '{vsew: EW_8, default: '0})
       `FFL(fpu_in_valid_q, int_fpu_in_valid_gated, int_fpu_in_ready, 1'b0)
-
+      `FFL(fpu_simd_mask_q, fpu_simd_mask[fpu], int_fpu_in_valid && int_fpu_in_ready, '1)
 
       assign int_fpu_in_ready = !fpu_in_valid_q || fpu_in_valid_q && fpu_in_ready_d;
       assign fpu_load_ready[fpu] = int_fpu_in_valid_gated && int_fpu_in_ready;
@@ -1887,6 +1967,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
         .Features                   (FPUFeatures           ),
         .Implementation             (FPUImpl               ),
         .TagType                    (vfu_tag_t             ),
+        .EnableSIMDMask             (1'b1                  ),
         .StochasticRndImplementation(fpnew_pkg::DEFAULT_RSR)
       ) i_fpu (
         .clk_i         (clk_i                                                  ),
@@ -1905,7 +1986,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
         .vectorial_op_i(fpu_vectorial_op_q                                     ),
         .op_mod_i      (fpu_op_mode_q                                          ),
         .tag_i         (input_tag_q                                            ),
-        .simd_mask_i   ('1                                                     ),
+        .simd_mask_i   (fpu_simd_mask_q                                        ),
         .rnd_mode_i    (rm_q                                                   ),
         .result_o      (fpu_result[fpu*ELEN +: ELEN]                           ),
         .out_valid_o   (int_fpu_result_valid                                   ),

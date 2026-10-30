@@ -218,9 +218,12 @@ module spatz_fpu_sequencer
         riscv_instr::FNMADD_B,
         riscv_instr::FCVT_B_H,
         riscv_instr::FCVT_H_B: begin
-          if (RVF && (!(issue_req_i.data_op inside {riscv_instr::FDIV_B, riscv_instr::FSQRT_B}) || FDivSqrt)) begin
+          // When instr is FDIV_B or FSQRT_B, use_fd should be set to 1'b0 because otherwise fd is pending in the scoreboard
+          // This because spatz_decoder only decodes H, S, D versions of these instructions
+          if (RVF && !(issue_req_i.data_op inside {riscv_instr::FDIV_B, riscv_instr::FSQRT_B})) begin
             use_fs1 = !(issue_req_i.data_op inside {riscv_instr::FCVT_B_W, riscv_instr::FCVT_B_WU});
-            use_fs2 = !(issue_req_i.data_op inside {riscv_instr::FCLASS_B});
+            // don't read fs2 bits since they don't represent a register to be read for these instructions
+            use_fs2 = !(issue_req_i.data_op inside {riscv_instr::FCLASS_B, riscv_instr::FCVT_B_W, riscv_instr::FCVT_B_WU, riscv_instr::FCVT_W_B, riscv_instr::FCVT_WU_B, riscv_instr::FCVT_B_H, riscv_instr::FCVT_H_B});
             use_fs3 = issue_req_i.data_op inside {riscv_instr::FMADD_B, riscv_instr::FMSUB_B, riscv_instr::FNMSUB_B, riscv_instr::FNMADD_B};
             use_fd  = !(issue_req_i.data_op inside {riscv_instr::FCLASS_B, riscv_instr::FLE_B, riscv_instr::FLT_B, riscv_instr::FEQ_B, riscv_instr::FCVT_W_B, riscv_instr::FCVT_WU_B});
           end else begin
@@ -272,7 +275,8 @@ module spatz_fpu_sequencer
         riscv_instr::FCVT_S_H: begin
           if (RVF && (!(issue_req_i.data_op inside {riscv_instr::FDIV_H, riscv_instr::FSQRT_H}) || FDivSqrt)) begin
             use_fs1 = !(issue_req_i.data_op inside {riscv_instr::FCVT_H_W, riscv_instr::FCVT_H_WU});
-            use_fs2 = !(issue_req_i.data_op inside {riscv_instr::FCLASS_H});
+            // don't read fs2 bits since they don't represent a register to be read for these instructions
+            use_fs2 = !(issue_req_i.data_op inside {riscv_instr::FCLASS_H, riscv_instr::FSQRT_H, riscv_instr::FCVT_H_W, riscv_instr::FCVT_H_WU, riscv_instr::FCVT_W_H, riscv_instr::FCVT_WU_H, riscv_instr::FCVT_H_S, riscv_instr::FCVT_S_H});
             use_fs3 = issue_req_i.data_op inside {riscv_instr::FMADD_H, riscv_instr::FMSUB_H, riscv_instr::FNMSUB_H, riscv_instr::FNMADD_H};
             use_fd  = !(issue_req_i.data_op inside {riscv_instr::FCLASS_H, riscv_instr::FLE_H, riscv_instr::FLT_H, riscv_instr::FEQ_H, riscv_instr::FCVT_W_H, riscv_instr::FCVT_WU_H});
           end else begin
@@ -324,7 +328,8 @@ module spatz_fpu_sequencer
         riscv_instr::FCVT_D_S: begin
           if (RVF && (!(issue_req_i.data_op inside {riscv_instr::FDIV_S, riscv_instr::FSQRT_S}) || FDivSqrt)) begin
             use_fs1 = !(issue_req_i.data_op inside {riscv_instr::FCVT_S_W, riscv_instr::FCVT_S_WU});
-            use_fs2 = !(issue_req_i.data_op inside {riscv_instr::FCLASS_S});
+            // don't read fs2 bits since they don't represent a register to be read for these instructions
+            use_fs2 = !(issue_req_i.data_op inside {riscv_instr::FCLASS_S, riscv_instr::FSQRT_S, riscv_instr::FCVT_S_W, riscv_instr::FCVT_S_WU, riscv_instr::FCVT_W_S, riscv_instr::FCVT_WU_S, riscv_instr::FCVT_S_D, riscv_instr::FCVT_D_S});
             use_fs3 = issue_req_i.data_op inside {riscv_instr::FMADD_S, riscv_instr::FMSUB_S, riscv_instr::FNMSUB_S, riscv_instr::FNMADD_S};
             use_fd  = !(issue_req_i.data_op inside {riscv_instr::FCLASS_S, riscv_instr::FLE_S, riscv_instr::FLT_S, riscv_instr::FEQ_S, riscv_instr::FCVT_W_S, riscv_instr::FCVT_WU_S});
           end else begin
@@ -374,7 +379,8 @@ module spatz_fpu_sequencer
         riscv_instr::FNMADD_D: begin
           if (RVD && (!(issue_req_i.data_op inside {riscv_instr::FDIV_D, riscv_instr::FSQRT_D}) || FDivSqrt)) begin
             use_fs1 = !(issue_req_i.data_op inside {riscv_instr::FCVT_D_W, riscv_instr::FCVT_D_WU});
-            use_fs2 = 1'b1;
+            // don't read fs2 bits since they don't represent a register to be read for these instructions
+            use_fs2 = !(issue_req_i.data_op inside {riscv_instr::FCLASS_D, riscv_instr::FSQRT_D, riscv_instr::FCVT_D_W, riscv_instr::FCVT_D_WU, riscv_instr::FCVT_W_D, riscv_instr::FCVT_WU_D});
             use_fs3 = issue_req_i.data_op inside {riscv_instr::FMADD_D, riscv_instr::FMSUB_D, riscv_instr::FNMSUB_D, riscv_instr::FNMADD_D};
             use_fd  = !(issue_req_i.data_op inside {riscv_instr::FCLASS_D, riscv_instr::FLE_D, riscv_instr::FLT_D, riscv_instr::FEQ_D, riscv_instr::FCVT_W_D, riscv_instr::FCVT_WU_D});
           end else begin
