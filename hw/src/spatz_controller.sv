@@ -91,7 +91,6 @@ module spatz_controller
   // Spatz request
   spatz_req_t spatz_req;
   logic       spatz_req_valid;
-  logic       spatz_req_illegal;
 `ifdef VENTAGLIO
   logic       spatz_req_vtl_illegal;
 `endif
@@ -278,39 +277,26 @@ module spatz_controller
     assign decoder_rsp_illegal   = decoder_rsp_valid && decoder_rsp.instr_illegal;
   `endif
 
-  logic buffer_illegal;
-
   // One element wide instruction buffer
   fall_through_register #(
     .T(spatz_req_t)
   ) i_req_buffer (
-    .clk_i     (clk_i                  ),
-    .rst_ni    (rst_ni                 ),
-    .clr_i     (1'b0                   ),
-    .testmode_i(1'b0                   ),
-    .ready_o   (req_buffer_ready       ),
-    .valid_o   (req_buffer_valid       ),
-    .data_i    (decoder_rsp.spatz_req  ),
-    .valid_i   (decoder_rsp_valid      ),
-    .data_o    (buffer_spatz_req       ),
-    .ready_i   (req_buffer_pop         )
+    .clk_i     (clk_i                                    ),
+    .rst_ni    (rst_ni                                   ),
+    .clr_i     (1'b0                                     ),
+    .testmode_i(1'b0                                     ),
+    .ready_o   (req_buffer_ready                         ),
+    .valid_o   (req_buffer_valid                         ),
+    .data_i    (decoder_rsp.spatz_req                    ),
+    .valid_i   (decoder_rsp_valid && !decoder_rsp_illegal),
+    .data_o    (buffer_spatz_req                         ),
+    .ready_i   (req_buffer_pop                           )
   );
 
-  // Same control signals, so the flag stays aligned with the buffered request
-  fall_through_register #(
-    .T(logic)
-  ) i_req_buffer_illegal (
-    .clk_i     (clk_i                  ),
-    .rst_ni    (rst_ni                 ),
-    .clr_i     (1'b0                   ),
-    .testmode_i(1'b0                   ),
-    .ready_o   (                       ),
-    .valid_o   (                       ),
-    .data_i    (decoder_rsp_illegal    ),
-    .valid_i   (decoder_rsp_valid      ),
-    .data_o    (buffer_illegal         ),
-    .ready_i   (req_buffer_pop         )
-  );
+  // vl != 0 as seen by the issue guards, independent of spatz_req_valid:
+  // in every branch of ex_issue the issued vl is zero only if vl_q is zero (scalar ops force vl = 1)
+  logic issue_vl_nz;
+  assign issue_vl_nz = (vl_q != '0) || (buffer_spatz_req.op_arith.is_scalar && (buffer_spatz_req.ex_unit inside {VFU, SLD}));
 
   ////////////////
   // Scoreboard //
@@ -453,7 +439,7 @@ module spatz_controller
         if (eew > sew)      emul_val = lmul_val << (eew - sew);
         else if (eew < sew) emul_val = (lmul_val >> (sew - eew)) == 0 ? 1 : (lmul_val >> (sew - eew));
         else                emul_val = lmul_val;
-        vd_span = emul_val * nf_fields;
+        vd_span = nf_fields << ((emul_val == 8) ? 3 : (emul_val == 4) ? 2 : (emul_val == 2) ? 1 : 0);
       end
     end else if (spatz_req.op_arith.widen_vs1 || spatz_req.op_arith.widen_vs2) begin
       vd_span = lmul_val << 1;
@@ -666,7 +652,7 @@ module spatz_controller
 `endif
 
     // Initialize the scoreboard metadata if we have a new instruction issued.
-    if (spatz_req_valid && spatz_req.ex_unit != CON && (spatz_req.vl != '0 || spatz_req.op_arith.is_reduction)) begin
+    if (spatz_req_valid && spatz_req.ex_unit != CON && (issue_vl_nz || spatz_req.op_arith.is_reduction)) begin
 `ifdef VENTAGLIO
       // VTL forward extension
       vtl_table_d[spatz_req.id] = '{use_vtl: 1'b0, write: '0, read: '0}; // init a table entry
@@ -887,8 +873,7 @@ module spatz_controller
     // Define new spatz request
     spatz_req             = buffer_spatz_req;
     spatz_req.id          = next_insn_id;
-    spatz_req_illegal     = buffer_illegal;
-    spatz_req_valid       = req_buffer_pop && !spatz_req_illegal && (!running_insn_full);
+    spatz_req_valid       = req_buffer_pop && (!running_insn_full);
 
     // We have a new instruction and there is no stall.
     if (spatz_req_valid) begin
@@ -977,7 +962,7 @@ module spatz_controller
     // New instruction!
     // A vl=0 op retires with no response, so tracking it would never clear
     if (spatz_req_valid && spatz_req.ex_unit != CON &&
-        (spatz_req.vl != '0 || spatz_req.op_arith.is_reduction))
+        (issue_vl_nz || spatz_req.op_arith.is_reduction))
       running_insn_d[next_insn_id] = 1'b1;
 
     // Finished a instruction
