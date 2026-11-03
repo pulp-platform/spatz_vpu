@@ -655,8 +655,10 @@ module spatz_controller
         scoreboard_d[spatz_req.id].deps[write_table_d[spatz_req.vd].id] |= write_table_d[spatz_req.vd].valid;
         read_table_d[spatz_req.vd] = {spatz_req.id, 1'b1};
       end
-      // tackling v0 RAW hazard
-      if (!spatz_req.op_arith.vm) begin
+      // tackling v0 RAW hazard: only masked vector instructions read v0. Loads and stores keep
+      // their vm bit in op_mem; op_arith.vm stays 0 for them and for scalar ops
+      if (spatz_req.ex_unit == LSU ? !spatz_req.op_mem.vm
+                                   : !spatz_req.op_arith.vm && !spatz_req.op_arith.is_scalar) begin
         scoreboard_d[spatz_req.id].deps[write_table_d[0].id] |= write_table_d[0].valid;
         read_table_d[0] = {spatz_req.id, 1'b1};
       end
