@@ -1170,7 +1170,9 @@ module spatz_doublebw_vlsu
       // Propagate request ID
       vrf_req_d[intf].rsp.id    = commit_insn_q.id;
       vrf_req_d[intf].rsp.intf_id = intf;
-      vrf_req_d[intf].rsp_valid = commit_insn_valid && &commit_finished_d[intf] && mem_insn_finished_d[commit_insn_q.id];
+      // Final once this interface committed its share: the other interface may still be issuing
+      // loads, and the response to the controller waits for both interfaces anyway
+      vrf_req_d[intf].rsp_valid = commit_insn_valid && &commit_finished_d[intf];
       vrf_req_d[intf].commit_vl = commit_insn_q.vl;
 
       // Request indexes. Once this interface has no more elements left to

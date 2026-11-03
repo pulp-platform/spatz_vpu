@@ -1,3 +1,7 @@
+# Copyright 2026 ETH Zurich and University of Bologna.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+
 import sys
 try:
     import json5 as hjson  # prefer json5 for Snitch cluster JSON5 configs
