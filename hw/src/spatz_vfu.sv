@@ -956,7 +956,7 @@ module spatz_vfu
           reduction_d = '0;
         `else
           // Maintain the input operand or set to '0 for the inputs until valid results arrive
-          reduction_d[0] = result_valid ? result : spatz_req.op inside {VFMINMAX, VAND, VOR, VMAX, VMAXU, VMIN, VMINU} ? reduction_q[0] : '0;
+          reduction_d[0] = |result_valid ? result : spatz_req.op inside {VFMINMAX, VAND, VOR, VMAX, VMAXU, VMIN, VMINU} ? reduction_q[0] : '0;
           if ((N_IPU>0) && ~is_fpu_insn) begin
             // If IPU is used and if the DLEN < VRF word size, select the chunk
             reduction_d[1] = (VRFWordWidth==N_IPU*ELEN) ? $unsigned(reduction_vector_data) :
@@ -990,7 +990,7 @@ module spatz_vfu
         `ifdef MEMPOOL_SPATZ
           reduction_d = '0;
         `else
-          reduction_d[0] = result_valid ? $unsigned(result) : reduction_q[0];
+          reduction_d[0] = |result_valid ? $unsigned(result) : reduction_q[0];
           reduction_d[1] = result_buf_valid_q ? $unsigned(result_buf_q) :  reduction_q[1];
         `endif
         lat_count_d = result_valid[0] ? '0 : lat_count_q + 1;
