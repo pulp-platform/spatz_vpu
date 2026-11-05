@@ -42,6 +42,44 @@ module spatz_decoder
   // Decoder //
   /////////////
 
+  // EMUL / NFIELDS / vd legality, from raw instruction bits and vtype only (runs parallel to the decode)
+  logic emul_illegal_cand;
+  always_comb begin : emul_pre_check
+    automatic logic signed [4:0] sew_l  = $signed(5'(decoder_req_i.vtype.vsew));
+    automatic logic signed [4:0] eew_l  = $signed({3'b000, decoder_req_i.instr[13:12]});
+    automatic logic signed [4:0] lmul_l;
+    automatic logic signed [4:0] e_eew, data_emul_l;
+    automatic logic        [1:0] emul_pos;
+    automatic logic        [3:0] nfields = {1'b0, decoder_req_i.instr[31:29]} + 4'd1;
+    automatic logic        [6:0] regs_tot;
+    automatic logic        [4:0] vd_idx  = decoder_req_i.instr[11:7];
+    automatic logic              indexed = decoder_req_i.instr[26];
+
+    unique case (decoder_req_i.vtype.vlmul)
+      LMUL_F8: lmul_l = -5'sd3;
+      LMUL_F4: lmul_l = -5'sd2;
+      LMUL_F2: lmul_l = -5'sd1;
+      LMUL_2:  lmul_l =  5'sd1;
+      LMUL_4:  lmul_l =  5'sd2;
+      LMUL_8:  lmul_l =  5'sd3;
+      default: lmul_l =  5'sd0;
+    endcase
+
+    e_eew       = lmul_l + eew_l - sew_l;       // index EMUL for indexed ops, data EMUL otherwise
+    data_emul_l = indexed ? lmul_l : e_eew;
+
+    emul_illegal_cand = 1'b0;
+    if (indexed && (e_eew < -5'sd3 || e_eew > 5'sd3))       emul_illegal_cand = 1'b1;
+    if (data_emul_l < -5'sd3 || data_emul_l > 5'sd3)         emul_illegal_cand = 1'b1;
+    if ((data_emul_l == 5'sd1 &&  decoder_req_i.instr[31])   ||
+        (data_emul_l == 5'sd2 && |decoder_req_i.instr[31:30]) ||
+        (data_emul_l == 5'sd3))                              emul_illegal_cand = 1'b1;
+
+    emul_pos = (data_emul_l > 5'sd0) ? data_emul_l[1:0] : 2'd0;
+    regs_tot = 7'(nfields) << emul_pos;
+    if ((7'(vd_idx) + regs_tot) > 7'd32) emul_illegal_cand = 1'b1;
+  end
+
   always_comb begin : decoder
     illegal_instr = 1'b0;
     spatz_req     = '0;
@@ -173,6 +211,7 @@ module spatz_decoder
               spatz_req.use_vd         = 1'b1;
               spatz_req.rs1            = decoder_req_i.rs1;
               spatz_req.rs2            = decoder_req_i.rs2;
+              spatz_req.nf             = ls_nf;
             end
 
             riscv_instr::VLUXEI8_V,
@@ -194,6 +233,7 @@ module spatz_decoder
               spatz_req.rs1            = decoder_req_i.rs1;
               spatz_req.vs2            = ls_s2;
               spatz_req.use_vs2        = 1'b1;
+              spatz_req.nf             = ls_nf;
 
               // This is an indexed operation
               spatz_req.op_mem.ew  = spatz_req.vtype.vsew;
@@ -237,6 +277,7 @@ module spatz_decoder
               spatz_req.vd_is_src      = 1'b1;
               spatz_req.rs1            = decoder_req_i.rs1;
               spatz_req.rs2            = decoder_req_i.rs2;
+              spatz_req.nf             = ls_nf;
             end
 
             riscv_instr::VSUXEI8_V,
@@ -253,12 +294,14 @@ module spatz_decoder
               // Controller's LSU dispatch (spatz_controller.sv:601) does
               // `spatz_req.vd = spatz_req.op_vtl.old_vd`, so old_vd must
               // carry the real vd or vd gets clobbered to 0.
-              spatz_req.op_vtl.old_vd  = ls_vd;
-              spatz_req.use_vd         = 1'b1;
-              spatz_req.vd_is_src      = 1'b1;
-              spatz_req.rs1            = decoder_req_i.rs1;
-              spatz_req.vs2            = ls_s2;
-              spatz_req.use_vs2        = 1'b1;
+              spatz_req.op_mem.is_ordered = (ls_mop == 2'b11);
+              spatz_req.op_vtl.old_vd     = ls_vd;
+              spatz_req.use_vd            = 1'b1;
+              spatz_req.vd_is_src         = 1'b1;
+              spatz_req.rs1               = decoder_req_i.rs1;
+              spatz_req.vs2               = ls_s2;
+              spatz_req.use_vs2           = 1'b1;
+              spatz_req.nf                = ls_nf;
 
               // This is an indexed operation
               spatz_req.op_mem.ew  = spatz_req.vtype.vsew;
@@ -2166,6 +2209,10 @@ module spatz_decoder
 
         default: illegal_instr = 1'b1;
       endcase // Opcodes
+
+      // Check EMUL / NFIELDS legality for loads and stores (pre-computed in emul_pre_check)
+      if (spatz_req.ex_unit == LSU && (spatz_req.nf != 0) && emul_illegal_cand)
+        illegal_instr = 1'b1;
 
       // Add correct reset_vstart value
       spatz_req.op_cfg.reset_vstart = illegal_instr ? 1'b0 : reset_vstart;

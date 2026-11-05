@@ -238,6 +238,7 @@ package spatz_pkg;
   typedef struct packed {
     logic vm;
     logic is_load;
+    logic is_ordered;
     vew_e ew;
   } op_mem_t;
 
