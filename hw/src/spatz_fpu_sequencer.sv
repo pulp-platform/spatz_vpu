@@ -598,6 +598,10 @@ module spatz_fpu_sequencer
     {riscv_instr::VLE8_V, riscv_instr::VLE16_V, riscv_instr::VLE32_V, riscv_instr::VLE64_V,
     riscv_instr::VLX8_V, riscv_instr::VLX16_V, riscv_instr::VLX32_V, riscv_instr::VLX64_V,
     riscv_instr::VLSE8_V, riscv_instr::VLSE16_V, riscv_instr::VLSE32_V, riscv_instr::VLSE64_V,
+    riscv_instr::VL1RE8_V, riscv_instr::VL1RE16_V, riscv_instr::VL1RE32_V, riscv_instr::VL1RE64_V,
+    riscv_instr::VL2RE8_V, riscv_instr::VL2RE16_V, riscv_instr::VL2RE32_V, riscv_instr::VL2RE64_V,
+    riscv_instr::VL4RE8_V, riscv_instr::VL4RE16_V, riscv_instr::VL4RE32_V, riscv_instr::VL4RE64_V,
+    riscv_instr::VL8RE8_V, riscv_instr::VL8RE16_V, riscv_instr::VL8RE32_V, riscv_instr::VL8RE64_V,
     riscv_instr::VLOXEI8_V, riscv_instr::VLOXEI16_V, riscv_instr::VLOXEI32_V, riscv_instr::VLOXEI64_V,
     riscv_instr::VLUXEI8_V, riscv_instr::VLUXEI16_V, riscv_instr::VLUXEI32_V, riscv_instr::VLUXEI64_V};
 
@@ -605,6 +609,7 @@ module spatz_fpu_sequencer
   logic is_vector_store;
   assign is_vector_store = issue_req_i.data_op inside
     {riscv_instr::VSE8_V, riscv_instr::VSE16_V, riscv_instr::VSE32_V, riscv_instr::VSE64_V,
+    riscv_instr::VS1R_V, riscv_instr::VS2R_V, riscv_instr::VS4R_V, riscv_instr::VS8R_V,
     riscv_instr::VSSE8_V, riscv_instr::VSSE16_V, riscv_instr::VSSE32_V, riscv_instr::VSSE64_V,
     riscv_instr::VSOXEI8_V, riscv_instr::VSOXEI16_V, riscv_instr::VSOXEI32_V, riscv_instr::VSOXEI64_V,
     riscv_instr::VSUXEI8_V, riscv_instr::VSUXEI16_V, riscv_instr::VSUXEI32_V, riscv_instr::VSUXEI64_V};

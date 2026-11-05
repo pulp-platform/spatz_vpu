@@ -96,6 +96,22 @@ module spatz_decoder
         riscv_instr::VLE16_V,
         riscv_instr::VLE32_V,
         riscv_instr::VLE64_V,
+        riscv_instr::VL1RE8_V,
+        riscv_instr::VL1RE16_V,
+        riscv_instr::VL1RE32_V,
+        riscv_instr::VL1RE64_V,
+        riscv_instr::VL2RE8_V,
+        riscv_instr::VL2RE16_V,
+        riscv_instr::VL2RE32_V,
+        riscv_instr::VL2RE64_V,
+        riscv_instr::VL4RE8_V,
+        riscv_instr::VL4RE16_V,
+        riscv_instr::VL4RE32_V,
+        riscv_instr::VL4RE64_V,
+        riscv_instr::VL8RE8_V,
+        riscv_instr::VL8RE16_V,
+        riscv_instr::VL8RE32_V,
+        riscv_instr::VL8RE64_V,
         riscv_instr::VLX8_V,
         riscv_instr::VLX16_V,
         riscv_instr::VLX32_V,
@@ -116,6 +132,10 @@ module spatz_decoder
         riscv_instr::VSE16_V,
         riscv_instr::VSE32_V,
         riscv_instr::VSE64_V,
+        riscv_instr::VS1R_V,
+        riscv_instr::VS2R_V,
+        riscv_instr::VS4R_V,
+        riscv_instr::VS8R_V,
         riscv_instr::VSSE8_V,
         riscv_instr::VSSE16_V,
         riscv_instr::VSSE32_V,
@@ -162,18 +182,47 @@ module spatz_decoder
               if (ls_nf == 3'b000) begin
                 spatz_req.op             = VLE;
                 spatz_req.op_mem.is_load = 1'b1;
-                spatz_req.op_vtl.old_vd      = ls_vd;
+                spatz_req.op_vtl.old_vd  = ls_vd;
                 spatz_req.use_vd         = 1'b1;
                 spatz_req.rs1            = decoder_req_i.rs1;
                 spatz_req.op_vtl.is_load_idx = 1'b0;
               end else begin
                 spatz_req.op             = VLSEG;
                 spatz_req.op_mem.is_load = 1'b1;
-                spatz_req.op_vtl.old_vd      = ls_vd;
+                spatz_req.op_vtl.old_vd  = ls_vd;
                 spatz_req.use_vd         = 1'b1;
                 spatz_req.rs1            = decoder_req_i.rs1;
                 spatz_req.op_vtl.is_load_idx = 1'b0;
                 spatz_req.nf             = ls_nf;
+              end
+            end
+            
+            riscv_instr::VL1RE8_V,
+            riscv_instr::VL1RE16_V,
+            riscv_instr::VL1RE32_V,
+            riscv_instr::VL1RE64_V,
+            riscv_instr::VL2RE8_V,
+            riscv_instr::VL2RE16_V,
+            riscv_instr::VL2RE32_V,
+            riscv_instr::VL2RE64_V,
+            riscv_instr::VL4RE8_V,
+            riscv_instr::VL4RE16_V,
+            riscv_instr::VL4RE32_V,
+            riscv_instr::VL4RE64_V,
+            riscv_instr::VL8RE8_V,
+            riscv_instr::VL8RE16_V,
+            riscv_instr::VL8RE32_V,
+            riscv_instr::VL8RE64_V: begin
+              spatz_req.op                 = VLRE;
+              spatz_req.op_mem.is_load     = 1'b1;
+              spatz_req.op_vtl.old_vd      = ls_vd;
+              spatz_req.use_vd             = 1'b1;
+              spatz_req.rs1                = decoder_req_i.rs1;
+              spatz_req.op_vtl.is_load_idx = 1'b0;
+              spatz_req.nf                 = ls_nf;
+
+              if (({1'b0, ls_vd} + {3'b0, ls_nf} + 6'd1) > 6'd32) begin
+                  illegal_instr = 1'b1;
               end
             end
 
@@ -261,6 +310,24 @@ module spatz_decoder
                 spatz_req.rs1            = decoder_req_i.rs1;
                 spatz_req.op_vtl.is_load_idx = 1'b0;
                 spatz_req.nf             = ls_nf;
+              end
+            end
+
+            riscv_instr::VS1R_V,
+            riscv_instr::VS2R_V,
+            riscv_instr::VS4R_V,
+            riscv_instr::VS8R_V: begin
+              spatz_req.op                 = VSR;
+              spatz_req.op_mem.is_load     = 1'b0;
+              spatz_req.op_vtl.old_vd      = ls_vd;
+              spatz_req.use_vd             = 1'b1;
+              spatz_req.vd_is_src          = 1'b1;
+              spatz_req.rs1                = decoder_req_i.rs1;
+              spatz_req.op_vtl.is_load_idx = 1'b0;
+              spatz_req.nf                 = ls_nf;
+
+              if (({1'b0, ls_vd} + {3'b0, ls_nf} + 6'd1) > 6'd32) begin
+                  illegal_instr = 1'b1;
               end
             end
 
