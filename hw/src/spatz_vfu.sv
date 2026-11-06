@@ -529,7 +529,11 @@ module spatz_vfu
     src_vsew = vew_e'(spatz_req.vtype.vsew + spatz_req.op_arith.is_narrowing);
 
     // Read side: source-width bytes
-    rem_rd = (vl_q < spatz_req.vl) ? ((spatz_req.vl - vl_q) << src_vsew) : '0;
+    if ((spatz_req.op_arith.widen_vs1 || spatz_req.op_arith.widen_vs2) && widening_upper_q) begin
+      rem_rd = (vl_q < spatz_req.vl) ? (VRFWordBWidth/2 + ((spatz_req.vl - vl_q) << src_vsew)) : '0;
+    end else begin
+      rem_rd = (vl_q < spatz_req.vl) ? ((spatz_req.vl - vl_q) << src_vsew) : '0;
+    end
     valid_bytes_rd = (rem_rd >= VRFWordBWidth) ? ($bits(valid_bytes_rd))'(VRFWordBWidth) : rem_rd[$bits(valid_bytes_rd)-1:0];
 
     // Write side: dest-width bytes
