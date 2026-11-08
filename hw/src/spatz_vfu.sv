@@ -373,8 +373,7 @@ module spatz_vfu
     }
   };
 
-  logic [N_FPU-1:0] fpu_busy_d, fpu_busy_q;
-  `FF(fpu_busy_q, fpu_busy_d, '0)
+  logic [N_FPU-1:0] fpu_busy_d;
 
   // Registered per lane in gen_fpnew below, gated on that lane's own `spatz_fpu_rsp.p_valid`.
   status_t [N_FPU-1:0] fpu_status_q;
@@ -385,7 +384,7 @@ module spatz_vfu
       fpu_vectorial_op = 1'b0;
       fpu_pace_mode    = '0;
       fpu_pace_mode.degree = pace_mode_i.degree;
-      is_fpu_busy      = |fpu_busy_q;
+      is_fpu_busy      = |fpu_busy_d;
       fpu_src_fmt      = fpnew_pkg::FP32;
       fpu_dst_fmt      = fpnew_pkg::FP32;
       fpu_int_fmt      = fpnew_pkg::INT32;
@@ -420,7 +419,12 @@ module spatz_vfu
             fpu_vectorial_op = 1'b1;
           end
           EW_8: begin
-            fpu_src_fmt      = spatz_req.op_arith.is_narrowing || spatz_req.op_arith.widen_vs1 || spatz_req.op_arith.widen_vs2 ? (spatz_req.fm.src ? fpnew_pkg::FP16ALT : fpnew_pkg::FP16) : (spatz_req.fm.src ? fpnew_pkg::FP8ALT : fpnew_pkg::FP8);
+            if (spatz_req.op_arith.is_narrowing)
+              fpu_src_fmt = spatz_req.fm.src ? fpnew_pkg::FP16ALT : fpnew_pkg::FP16;
+            else if (spatz_req.op_arith.widen_vs1 || spatz_req.op_arith.widen_vs2)
+              fpu_src_fmt = spatz_req.fm.dst ? fpnew_pkg::FP16ALT : fpnew_pkg::FP16;
+            else
+              fpu_src_fmt = spatz_req.fm.src ? fpnew_pkg::FP8ALT  : fpnew_pkg::FP8;
             fpu_dst_fmt      = spatz_req.op_arith.widen_vs1 || spatz_req.op_arith.widen_vs2 || spatz_req.op == VSDOTP          ? (spatz_req.fm.dst ? fpnew_pkg::FP16ALT : fpnew_pkg::FP16) : (spatz_req.fm.dst ? fpnew_pkg::FP8ALT : fpnew_pkg::FP8);
             fpu_int_fmt      = spatz_req.op_arith.is_narrowing && spatz_req.op inside {VI2F, VU2F}                             ? fpnew_pkg::INT16 : fpnew_pkg::INT8;
             fpu_vectorial_op = 1'b1;
@@ -952,7 +956,7 @@ module spatz_vfu
           reduction_d = '0;
         `else
           // Maintain the input operand or set to '0 for the inputs until valid results arrive
-          reduction_d[0] = result_valid ? result : spatz_req.op inside {VFMINMAX, VAND, VOR, VMAX, VMAXU, VMIN, VMINU} ? reduction_q[0] : '0;
+          reduction_d[0] = |result_valid ? result : spatz_req.op inside {VFMINMAX, VAND, VOR, VMAX, VMAXU, VMIN, VMINU} ? reduction_q[0] : '0;
           if ((N_IPU>0) && ~is_fpu_insn) begin
             // If IPU is used and if the DLEN < VRF word size, select the chunk
             reduction_d[1] = (VRFWordWidth==N_IPU*ELEN) ? $unsigned(reduction_vector_data) :
@@ -986,7 +990,7 @@ module spatz_vfu
         `ifdef MEMPOOL_SPATZ
           reduction_d = '0;
         `else
-          reduction_d[0] = result_valid ? $unsigned(result) : reduction_q[0];
+          reduction_d[0] = |result_valid ? $unsigned(result) : reduction_q[0];
           reduction_d[1] = result_buf_valid_q ? $unsigned(result_buf_q) :  reduction_q[1];
         `endif
         lat_count_d = result_valid[0] ? '0 : lat_count_q + 1;
@@ -1648,19 +1652,33 @@ assign vfcmp_result_accepted = (spatz_req.op == VFCMP) && &(result_valid | ~pend
         EW_16: begin
           for (int el = 0; el < (MAXEW == EW_64 ? 2*N_FPU : N_FPU); el++) begin
             if (spatz_req.op_arith.widen_vs1)
-              wide_operand1[32*el +: 32] = widen_fp16_to_fp32(shift_operand1[16*el +: 16]);
+              wide_operand1[32*el +: 32] = spatz_req.fm.src ? widen_fp16alt_to_fp32(shift_operand1[16*el +: 16])
+                                                            : widen_fp16_to_fp32(shift_operand1[16*el +: 16]);
 
             if (spatz_req.op_arith.widen_vs2)
-              wide_operand2[32*el +: 32] = widen_fp16_to_fp32(shift_operand2[16*el +: 16]);
+              wide_operand2[32*el +: 32] = spatz_req.fm.src ? widen_fp16alt_to_fp32(shift_operand2[16*el +: 16])
+                                                            : widen_fp16_to_fp32(shift_operand2[16*el +: 16]);
           end
         end
         EW_8: begin
           for (int el = 0; el < (MAXEW == EW_64 ? 4*N_FPU : 2*N_FPU); el++) begin
-            if (spatz_req.op_arith.widen_vs1)
-              wide_operand1[16*el +: 16] = widen_fp8_to_fp16(shift_operand1[8*el +: 8]);
+            if (spatz_req.op_arith.widen_vs1) begin
+              unique case ({spatz_req.fm.src, spatz_req.fm.dst})
+                2'b00:  wide_operand1[16*el +: 16] = widen_fp8_to_fp16(shift_operand1[8*el +: 8]);
+                2'b01:  wide_operand1[16*el +: 16] = widen_fp8_to_fp16alt(shift_operand1[8*el +: 8]);
+                2'b10:  wide_operand1[16*el +: 16] = widen_fp8alt_to_fp16(shift_operand1[8*el +: 8]);
+                2'b11:  wide_operand1[16*el +: 16] = widen_fp8alt_to_fp16alt(shift_operand1[8*el +: 8]);
+              endcase
+            end
 
-            if (spatz_req.op_arith.widen_vs2)
-              wide_operand2[16*el +: 16] = widen_fp8_to_fp16(shift_operand2[8*el +: 8]);
+            if (spatz_req.op_arith.widen_vs2) begin
+              unique case ({spatz_req.fm.src, spatz_req.fm.dst})
+                2'b00:  wide_operand2[16*el +: 16] = widen_fp8_to_fp16(shift_operand2[8*el +: 8]);
+                2'b01:  wide_operand2[16*el +: 16] = widen_fp8_to_fp16alt(shift_operand2[8*el +: 8]);
+                2'b10:  wide_operand2[16*el +: 16] = widen_fp8alt_to_fp16(shift_operand2[8*el +: 8]);
+                2'b11:  wide_operand2[16*el +: 16] = widen_fp8alt_to_fp16alt(shift_operand2[8*el +: 8]);
+              endcase
+            end
           end
         end
         default:;
