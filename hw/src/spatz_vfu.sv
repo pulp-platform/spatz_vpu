@@ -251,6 +251,17 @@ module spatz_vfu
   logic [N_FU*ELENB-1:0]  saturated;
   logic                  result_ready;
 
+  // IPU results
+  logic [N_FU*ELEN-1:0]  ipu_result;
+  logic [N_FU*ELENB-1:0] ipu_result_valid;
+  logic [N_FU*ELENB-1:0] ipu_saturated;
+  logic [N_FU*ELENB-1:0] ipu_in_ready;
+
+  // FPU results
+  logic [N_FU*ELEN-1:0]  fpu_result;
+  logic [N_FU*ELENB-1:0] fpu_result_valid;
+  logic [N_FU*ELENB-1:0] fpu_in_ready;
+
   // it represents the VRF word index. Multiplication by 8 to account for LMUL
   logic [$clog2(NrWordsPerVector*8):0] word_idx_d, word_idx_q;
   logic [$clog2(N_FU)-1:0] divsqrt_slot_q, divsqrt_slot_d;
@@ -303,9 +314,9 @@ module spatz_vfu
     if (spatz_req_valid)
       unique case (state_q)
         VFU_RunningIPU: begin
-          // Only go to the FPU state once the IPUs are no longer busy
+          // Only go to the FPU state once the IPUs are idle and their results have been written
           if (is_fpu_insn) begin
-            if (is_ipu_busy)
+            if (is_ipu_busy || |ipu_result_valid)
               stall = 1'b1;
             else begin
               state_d = VFU_RunningFPU;
@@ -314,9 +325,9 @@ module spatz_vfu
           end
         end
         VFU_RunningFPU: begin
-          // Only go back to the IPU state once the FPUs are no longer busy
+          // Only go back to the IPU state once the FPUs are idle and their results have been written
           if (!is_fpu_insn)
-            if (is_fpu_busy)
+            if (is_fpu_busy || |fpu_result_valid)
               stall = 1'b1;
             else begin
               state_d = VFU_RunningIPU;
@@ -509,17 +520,6 @@ module spatz_vfu
   vrf_data_t reduction_vector_data, reduction_scalar_data;
   `FF(reduction_q, reduction_d, '0)
   elen_t reduction_neutral_value;
-
-  // IPU results
-  logic [N_FU*ELEN-1:0]  ipu_result;
-  logic [N_FU*ELENB-1:0] ipu_result_valid;
-  logic [N_FU*ELENB-1:0] ipu_saturated;
-  logic [N_FU*ELENB-1:0] ipu_in_ready;
-
-  // FPU results
-  logic [N_FU*ELEN-1:0]  fpu_result;
-  logic [N_FU*ELENB-1:0] fpu_result_valid;
-  logic [N_FU*ELENB-1:0] fpu_in_ready;
 
   // Valid bytes in current VRF word
   logic [$clog2(MAXVL*8+1)-1:0] remaining_bytes;
