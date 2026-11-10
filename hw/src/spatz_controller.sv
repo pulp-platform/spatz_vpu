@@ -830,11 +830,26 @@ module spatz_controller
   // Issuing //
   /////////////
 
+  // Running instructions
+  logic      [NrParallelInstructions-1:0] running_insn_d, running_insn_q;
+  spatz_id_t                              next_insn_id;
+  logic                                   running_insn_full;
+  `FF(running_insn_q, running_insn_d, '0)
+  logic                                   insn_shortcut_en;
+  spatz_id_t                              insn_shortcut_id;
+
   // Retire CSR instruction and write back result to main core.
   logic retire_csr;
 
   // Response channel to the core is ready
   logic rsp_ready_d;
+
+  // vxsat accesses must observe every older saturating instruction
+  logic vxsat_access;
+  assign vxsat_access = spatz_req.op == VCSR &&
+                        (spatz_req.op_csr.addr == riscv_instr::CSR_VXSAT ||
+                        spatz_req.op_cfg.write_vxsat || spatz_req.op_cfg.set_vxsat ||
+                        spatz_req.op_cfg.clear_vxsat);
 
   // We stall issuing a new instruction if the corresponding execution unit is
   // not ready yet. Or we have a change in LMUL, for which we need to let all the
@@ -846,7 +861,7 @@ module spatz_controller
   assign vfu_stall   = ~vfu_req_ready_i & (spatz_req.ex_unit == VFU);
   assign vlsu_stall  = ~vlsu_req_ready_i & (spatz_req.ex_unit == LSU);
   // The CSR response has no other backpressure
-  assign csr_stall   = ~rsp_ready_d & (spatz_req.ex_unit == CON);
+  assign csr_stall   = (~rsp_ready_d & (spatz_req.ex_unit == CON)) || (vxsat_access && |running_insn_q);;
 `ifdef VENTAGLIO
   // VSLDU stalls only for true SLD-routed non-VTL ops (the VTL/VSLDU
   // shared-port arbiter routes use_vtl ops through ventaglio instead).
@@ -860,14 +875,6 @@ module spatz_controller
   assign vsldu_stall = ~vsldu_req_ready_i & (spatz_req.ex_unit == SLD);
   assign vtl_stall   = 1'b0;
 `endif
-
-  // Running instructions
-  logic      [NrParallelInstructions-1:0] running_insn_d, running_insn_q;
-  spatz_id_t                              next_insn_id;
-  logic                                   running_insn_full;
-  `FF(running_insn_q, running_insn_d, '0)
-  logic                                   insn_shortcut_en;
-  spatz_id_t                              insn_shortcut_id;
 
   find_first_one #(
     .WIDTH(NrParallelInstructions)
