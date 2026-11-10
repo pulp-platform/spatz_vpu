@@ -652,12 +652,16 @@ module spatz_fpu_sequencer
     mem_pid    = fp_lsu_mem_rsp_i.id;
 `endif
 
-    if ((is_vector_load || is_vector_store) && issue_ready_i && issue_valid_o)
+    // Only count memory operations that Spatz actually accepted;
+    // rejected (illegal) ones never produce a finished pulse.
+    if ((is_vector_load || is_vector_store) && issue_ready_i && issue_valid_o &&
+        issue_rsp_i.accept && !issue_rsp_i.exception)
       acc_mem_cnt_d += 1;
     if (spatz_mem_finished_i)
       acc_mem_cnt_d -= 1;
 
-    if (is_vector_store && issue_ready_i && issue_valid_o)
+    if (is_vector_store && issue_ready_i && issue_valid_o &&
+        issue_rsp_i.accept && !issue_rsp_i.exception)
       acc_mem_str_cnt_d += 1;
     if (spatz_mem_finished_i && spatz_mem_str_finished_i)
       acc_mem_str_cnt_d -= 1;

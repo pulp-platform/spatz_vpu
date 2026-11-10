@@ -861,7 +861,7 @@ module spatz_vlsu
   assign vrf_wdata_o = coalesce_q.wdata;
   assign vrf_wbe_o   = coalesce_q.wbe;
   assign vrf_we_o    = coalesce_commit;
-  assign vrf_id_o    = {coalesce_q.rsp.id, mem_spatz_req.id, commit_insn_q.id};
+  assign vrf_id_o    = {coalesce_q.rsp.id, (state_q == VLSU_ReadingV0_t) ? commit_insn_q.id : mem_spatz_req.id, commit_insn_q.id};
 
   // The spill register may be popped when the coalescing buffer can accept:
   //   - buffer is empty, OR
