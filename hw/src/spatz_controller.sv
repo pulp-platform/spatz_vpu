@@ -281,16 +281,16 @@ module spatz_controller
   fall_through_register #(
     .T(spatz_req_t)
   ) i_req_buffer (
-    .clk_i     (clk_i                                    ),
-    .rst_ni    (rst_ni                                   ),
-    .clr_i     (1'b0                                     ),
-    .testmode_i(1'b0                                     ),
-    .ready_o   (req_buffer_ready                         ),
-    .valid_o   (req_buffer_valid                         ),
-    .data_i    (decoder_rsp.spatz_req                    ),
-    .valid_i   (decoder_rsp_valid && !decoder_rsp_illegal),
-    .data_o    (buffer_spatz_req                         ),
-    .ready_i   (req_buffer_pop                           )
+    .clk_i     (clk_i                                                          ),
+    .rst_ni    (rst_ni                                                         ),
+    .clr_i     (1'b0                                                           ),
+    .testmode_i(1'b0                                                           ),
+    .ready_o   (req_buffer_ready                                               ),
+    .valid_o   (req_buffer_valid                                               ),
+    .data_i    (decoder_rsp.spatz_req                                          ),
+    .valid_i   (decoder_rsp_valid && !decoder_rsp_illegal && issue_rsp_o.accept),
+    .data_o    (buffer_spatz_req                                               ),
+    .ready_i   (req_buffer_pop                                                 )
   );
 
   // vl != 0 as seen by the issue guards, independent of spatz_req_valid:
