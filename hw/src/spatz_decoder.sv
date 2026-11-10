@@ -1040,6 +1040,7 @@ module spatz_decoder
         riscv_instr::VFMIN_VF,
         riscv_instr::VFMAX_VV,
         riscv_instr::VFMAX_VF,
+        riscv_instr::VFCLASS_V,
         riscv_instr::VFMERGE_VFM,
         riscv_instr::VMFEQ_VV,
         riscv_instr::VMFEQ_VF,
@@ -1186,6 +1187,11 @@ module spatz_decoder
               riscv_instr::VFMAX_VF: begin
                 spatz_req.op = VFMINMAX;
                 spatz_req.rm = fpnew_pkg::RTZ;
+              end
+
+              riscv_instr::VFCLASS_V: begin
+                spatz_req.op = VFCLASS;
+                spatz_req.use_vs2 = 1'b0;
               end
 
               riscv_instr::VFMERGE_VFM: begin

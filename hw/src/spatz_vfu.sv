@@ -1887,6 +1887,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
         .Features                   (FPUFeatures           ),
         .Implementation             (FPUImpl               ),
         .TagType                    (vfu_tag_t             ),
+        .TrueSIMDClass              (1'b1                  ),
         .StochasticRndImplementation(fpnew_pkg::DEFAULT_RSR)
       ) i_fpu (
         .clk_i         (clk_i                                                  ),
