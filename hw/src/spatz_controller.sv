@@ -1034,10 +1034,11 @@ module spatz_controller
           end
         end
         LSU: begin
-          issue_rsp_o.loadstore = 1'b1;
           if (vtype_q.vill) begin
             issue_rsp_o.accept = 1'b0;
             issue_rsp_o.exception = 1'b1;
+          end else begin
+            issue_rsp_o.loadstore = 1'b1;
           end
         end
         SLD: begin
