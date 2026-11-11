@@ -480,8 +480,6 @@ module spatz_decoder
           spatz_req.use_vd      = 1'b1;
           spatz_req.vd          = arith_d;
           spatz_req.ex_unit     = VFU;
-          if (!arith_vm && !(spatz_req.op inside {VMERGE, VADC, VSBC, VMADC, VMSBC}))
-            spatz_req.vd_is_src = 1'b1;
 
           // Decide which operands to use (vs1 or rs1 or imm)
           unique case (func3)
@@ -1013,6 +1011,8 @@ module spatz_decoder
 
             default: illegal_instr = 1'b1;
           endcase // Arithmetic Instruction Type
+          if (!arith_vm && !decoder_req_i.vtype.vma && spatz_req.op inside {VMSEQ, VMSNE, VMSLTU, VMSLT, VMSLEU, VMSLE, VMSGTU, VMSGT, VFCMP})
+            spatz_req.vd_is_src = 1'b1;
         end
 
         // Move to the scalar RF
@@ -1140,8 +1140,6 @@ module spatz_decoder
             spatz_req.ex_unit     = VFU;
             spatz_req.rm          = fpu_rnd_mode_i;
             spatz_req.fm          = fpu_fmt_mode_i;
-            if (!arith_vm && !(spatz_req.op inside {VMERGE, VADC, VSBC, VMADC, VMSBC}))
-              spatz_req.vd_is_src = 1'b1;
 
             // Decide which operands to use (vs2 or rs1 or imm)
             unique case (func3)
@@ -1493,6 +1491,8 @@ module spatz_decoder
 
               default;
             endcase
+            if (!arith_vm && !decoder_req_i.vtype.vma && spatz_req.op inside {VMSEQ, VMSNE, VMSLTU, VMSLT, VMSLEU, VMSLE, VMSGTU, VMSGT, VFCMP})
+              spatz_req.vd_is_src = 1'b1;
           end
         end
 
