@@ -603,7 +603,8 @@ module spatz_fpu_sequencer
     riscv_instr::VL4RE8_V, riscv_instr::VL4RE16_V, riscv_instr::VL4RE32_V, riscv_instr::VL4RE64_V,
     riscv_instr::VL8RE8_V, riscv_instr::VL8RE16_V, riscv_instr::VL8RE32_V, riscv_instr::VL8RE64_V,
     riscv_instr::VLOXEI8_V, riscv_instr::VLOXEI16_V, riscv_instr::VLOXEI32_V, riscv_instr::VLOXEI64_V,
-    riscv_instr::VLUXEI8_V, riscv_instr::VLUXEI16_V, riscv_instr::VLUXEI32_V, riscv_instr::VLUXEI64_V};
+    riscv_instr::VLUXEI8_V, riscv_instr::VLUXEI16_V, riscv_instr::VLUXEI32_V, riscv_instr::VLUXEI64_V,
+    riscv_instr::VLM_V};
 
   // Is the current instruction a vector store?
   logic is_vector_store;
@@ -612,7 +613,8 @@ module spatz_fpu_sequencer
     riscv_instr::VS1R_V, riscv_instr::VS2R_V, riscv_instr::VS4R_V, riscv_instr::VS8R_V,
     riscv_instr::VSSE8_V, riscv_instr::VSSE16_V, riscv_instr::VSSE32_V, riscv_instr::VSSE64_V,
     riscv_instr::VSOXEI8_V, riscv_instr::VSOXEI16_V, riscv_instr::VSOXEI32_V, riscv_instr::VSOXEI64_V,
-    riscv_instr::VSUXEI8_V, riscv_instr::VSUXEI16_V, riscv_instr::VSUXEI32_V, riscv_instr::VSUXEI64_V};
+    riscv_instr::VSUXEI8_V, riscv_instr::VSUXEI16_V, riscv_instr::VSUXEI32_V, riscv_instr::VSUXEI64_V,
+    riscv_instr::VSM_V};
 
   // Do we need to delay is load/store because of the VLSU?
   assign vlsu_stall = (is_store && acc_mem_cnt_q != '0) || (is_load && acc_mem_str_cnt_q != '0) || acc_mem_cnt_q == '1;

@@ -298,6 +298,11 @@ module spatz_controller
   logic issue_vl_nz;
   assign issue_vl_nz = (vl_q != '0) || (buffer_spatz_req.op_arith.is_scalar && (buffer_spatz_req.ex_unit inside {VFU, SLD}));
 
+  // LSU ops whose EMUL is LMUL itself rather than (EEW/SEW)*LMUL:
+  // indexed loads/stores (data EMUL = LMUL) and whole-register ops (EMUL = NREG, carried in vlmul)
+  logic emul_is_lmul;
+  assign emul_is_lmul = spatz_req.op inside {VLX, VLXE, VSXE, VLRE, VSR, VLM, VSM};
+
   ////////////////
   // Scoreboard //
   ////////////////
@@ -433,8 +438,9 @@ module spatz_controller
     vd_span  = lmul_val;
 
     if (spatz_req.ex_unit == LSU) begin
-      if (spatz_req.op inside {VLX, VLXE, VSXE}) begin
+      if (emul_is_lmul) begin
         emul_val = lmul_val;
+        vd_span  = nf_fields * lmul_val;
       end else begin
         if (eew > sew)      emul_val = lmul_val << (eew - sew);
         else if (eew < sew) emul_val = (lmul_val >> (sew - eew)) == 0 ? 1 : (lmul_val >> (sew - eew));
@@ -908,11 +914,12 @@ module spatz_controller
 
         LSU: begin
           // Overwrite vl and vstart in request (preserve vtype with vsew)
-          spatz_req.vtype.vlmul = vtype_q.vlmul;
           spatz_req.vl          = vl_q;
           spatz_req.vstart      = vstart_q;
           if (spatz_req.op inside {VLRE, VSR}) begin
-            spatz_req.vl = vlen_t'((VLENB * (32'(spatz_req.nf) + 1)) >> int'(spatz_req.vtype.vsew));
+            spatz_req.vl = vlen_t'((VLENB << spatz_req.vtype.vlmul[1:0]) >> int'(spatz_req.vtype.vsew));
+          end else if (!(spatz_req.op inside {VLRE, VSR, VLM, VSM})) begin
+            spatz_req.vtype.vlmul = vtype_q.vlmul;
           end
           // The decoder's load/store branches set `op_vtl.old_vd = ls_vd`
           // unconditionally (the field stays defined regardless of
@@ -1130,7 +1137,7 @@ module spatz_controller
     spatz_req_o = spatz_req;
     lmul_log2   = $signed({vtype_q.vlmul[2], vtype_q.vlmul});
 
-    if (spatz_req.ex_unit == LSU && !(spatz_req.op inside {VLX, VLXE, VSXE})) begin
+    if (spatz_req.ex_unit == LSU && !emul_is_lmul) begin
       emul_log2 = lmul_log2 + $signed({1'b0, spatz_req.vtype.vsew}) - $signed({1'b0, vtype_q.vsew});
       spatz_req_o.vtype.vlmul = rvv_pkg::vlmul_e'(emul_log2[2:0]);
     end

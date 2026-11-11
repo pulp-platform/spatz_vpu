@@ -107,13 +107,6 @@ module spatz_doublebw_vlsu
   // Convert the vl to number of bytes for all element widths
   always_comb begin: proc_spatz_req
     spatz_req_d = spatz_req_i;
-    
-    if (spatz_req_i.op == VLRE || spatz_req_i.op == VSR) begin
-      spatz_req_d.vl             = ({1'b0, spatz_req_i.nf} + 4'd1) * (VLEN / 8);
-      spatz_req_d.vtype.vsew     = EW_8;
-      spatz_req_d.op_mem.vm      = 1'b1;
-      spatz_req_d.vstart         = spatz_req_i.vstart;
-    end
 
     unique case (spatz_req_i.vtype.vsew)
       EW_8: begin
@@ -133,11 +126,29 @@ module spatz_doublebw_vlsu
         spatz_req_d.vstart = spatz_req_i.vstart << MAXEW;
       end
     endcase
+
+    if (spatz_req_i.op == VLRE || spatz_req_i.op == VSR) begin
+      spatz_req_d.vl             = (VLEN / 8) << spatz_req_i.vtype.vlmul[1:0];
+      spatz_req_d.vtype.vsew     = EW_8;
+      spatz_req_d.op_mem.vm      = 1'b1;
+      spatz_req_d.vstart         = spatz_req_i.vstart;
+    end
+
+    if (spatz_req_i.op == VLM || spatz_req_i.op == VSM) begin
+      spatz_req_d.vl             = (spatz_req_i.vl + 7) >> 3; // ceil(vl/8)
+      spatz_req_d.vstart         = spatz_req_i.vstart; 
+      spatz_req_d.vtype.vsew     = EW_8;
+      spatz_req_d.op_mem.vm      = 1'b1; // Force masking off during the load
+    end
+
   end: proc_spatz_req
 
   // Do we have a unit strided memory access
   logic mem_is_unit_strided;
-  assign mem_is_unit_strided = mem_spatz_req_valid && ((mem_spatz_req.op == VLE) || (mem_spatz_req.op == VSE) || (mem_spatz_req.op == VLRE) || (mem_spatz_req.op == VSR));
+  assign mem_is_unit_strided = mem_spatz_req_valid && 
+                              ((mem_spatz_req.op == VLE) || (mem_spatz_req.op == VSE) ||
+                              (mem_spatz_req.op == VLRE) || (mem_spatz_req.op == VSR) ||
+                              (mem_spatz_req.op == VLM)  || (mem_spatz_req.op == VSM));
 
   // Do we have a strided memory access
   logic mem_is_strided;
@@ -1452,7 +1463,7 @@ module spatz_doublebw_vlsu
       if (mem_is_indexed && |(mem_idx_vrf_fetch_pending[intf] & idx_needs_higher[intf]) && !(|(mem_idx_vrf_fetch_pending[intf] & idx_match_own[intf])))
         vs2_elem_id_d[intf] = vs2_elem_id_q[intf] + 1;
     end
-    if (mem_spatz_req_ready)
+    if (mem_spatz_req_ready || seg_completed)
       vs2_elem_id_d = '0;
   end
 

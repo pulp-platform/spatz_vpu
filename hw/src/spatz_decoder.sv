@@ -112,6 +112,7 @@ module spatz_decoder
         riscv_instr::VL8RE16_V,
         riscv_instr::VL8RE32_V,
         riscv_instr::VL8RE64_V,
+        riscv_instr::VLM_V,
         riscv_instr::VLX8_V,
         riscv_instr::VLX16_V,
         riscv_instr::VLX32_V,
@@ -136,6 +137,7 @@ module spatz_decoder
         riscv_instr::VS2R_V,
         riscv_instr::VS4R_V,
         riscv_instr::VS8R_V,
+        riscv_instr::VSM_V,
         riscv_instr::VSSE8_V,
         riscv_instr::VSSE16_V,
         riscv_instr::VSSE32_V,
@@ -219,11 +221,24 @@ module spatz_decoder
               spatz_req.use_vd             = 1'b1;
               spatz_req.rs1                = decoder_req_i.rs1;
               spatz_req.op_vtl.is_load_idx = 1'b0;
-              spatz_req.nf                 = ls_nf;
+              spatz_req.nf                 = '0;
+              spatz_req.vtype.vlmul        = vlmul_e'(ls_nf == 3'd7 ? LMUL_8 :
+                                                      ls_nf == 3'd3 ? LMUL_4 :
+                                                      ls_nf == 3'd1 ? LMUL_2 : LMUL_1);
 
-              if (({1'b0, ls_vd} + {3'b0, ls_nf} + 6'd1) > 6'd32) begin
-                  illegal_instr = 1'b1;
-              end
+
+              if (!(ls_nf inside {3'd0, 3'd1, 3'd3, 3'd7})) illegal_instr = 1'b1;
+            end
+
+            riscv_instr::VLM_V: begin
+              spatz_req.op                 = VLM;
+              spatz_req.op_mem.is_load     = 1'b1;
+              spatz_req.op_vtl.old_vd      = ls_vd;
+              spatz_req.use_vd             = 1'b1;
+              spatz_req.rs1                = decoder_req_i.rs1;
+              spatz_req.op_vtl.is_load_idx = 1'b0;
+              spatz_req.vtype.vsew         = EW_8;
+              spatz_req.vtype.vlmul        = LMUL_1;   // always exactly one register
             end
 
             riscv_instr::VLX8_V,
@@ -287,6 +302,30 @@ module spatz_decoder
               // This is an indexed operation
               spatz_req.op_mem.ew  = spatz_req.vtype.vsew;
               spatz_req.vtype.vsew = decoder_req_i.vtype.vsew;
+
+              // Indexed segment load: the destination groups must not overlap the index group (reserved encoding)
+              if (ls_nf != 3'd0) begin
+                automatic logic signed [3:0] lmul_l2, iemul_l2;
+                automatic logic        [3:0] data_regs, idx_regs;
+                automatic logic        [6:0] vd_end, vs2_end;
+
+                // log2(LMUL): vlmul is already signed log2 (F8=-3 ... 8=3)
+                lmul_l2   = $signed({decoder_req_i.vtype.vlmul[2], decoder_req_i.vtype.vlmul});
+                // log2(index EMUL) = log2(LMUL) + log2(index EEW) - log2(SEW)
+                iemul_l2  = lmul_l2 + $signed({2'b00, spatz_req.op_mem.ew}) - $signed({2'b00, decoder_req_i.vtype.vsew});
+
+                // Registers occupied (fractional EMUL still occupies one register)
+                data_regs = (lmul_l2  > 0) ? (4'd1 << lmul_l2)  : 4'd1;  // data EMUL = LMUL for indexed
+                idx_regs  = (iemul_l2 > 0) ? (4'd1 << iemul_l2) : 4'd1;
+
+                vd_end    = 7'(ls_vd) + 7'(({1'b0, ls_nf} + 4'd1) * data_regs);  // vd .. vd + NFIELDS*EMUL - 1
+                vs2_end   = 7'(ls_s2) + 7'(idx_regs);                            // vs2 .. vs2 + idx EMUL - 1
+
+                // Two intervals [a, a_end) and [b, b_end) overlap iff a < b_end && b < a_end
+                if ((7'(ls_vd) < vs2_end) && (7'(ls_s2) < vd_end))
+                  illegal_instr = 1'b1;
+              end
+
             end
 
             riscv_instr::VSE8_V,
@@ -324,11 +363,24 @@ module spatz_decoder
               spatz_req.vd_is_src          = 1'b1;
               spatz_req.rs1                = decoder_req_i.rs1;
               spatz_req.op_vtl.is_load_idx = 1'b0;
-              spatz_req.nf                 = ls_nf;
+              spatz_req.nf                 = '0;
+              spatz_req.vtype.vlmul        = vlmul_e'(ls_nf == 3'd7 ? LMUL_8 :
+                                                      ls_nf == 3'd3 ? LMUL_4 :
+                                                      ls_nf == 3'd1 ? LMUL_2 : LMUL_1);
 
-              if (({1'b0, ls_vd} + {3'b0, ls_nf} + 6'd1) > 6'd32) begin
-                  illegal_instr = 1'b1;
-              end
+              if (!(ls_nf inside {3'd0, 3'd1, 3'd3, 3'd7})) illegal_instr = 1'b1;
+            end
+
+            riscv_instr::VSM_V: begin
+              spatz_req.op                 = VSM;
+              spatz_req.op_mem.is_load     = 1'b0;
+              spatz_req.op_vtl.old_vd      = ls_vd;
+              spatz_req.use_vd             = 1'b1;
+              spatz_req.vd_is_src          = 1'b1;
+              spatz_req.rs1                = decoder_req_i.rs1;
+              spatz_req.op_vtl.is_load_idx = 1'b0;
+              spatz_req.vtype.vsew         = EW_8;
+              spatz_req.vtype.vlmul        = LMUL_1;   // always exactly one register
             end
 
             riscv_instr::VSSE8_V,
