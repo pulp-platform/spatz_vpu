@@ -980,7 +980,7 @@ module spatz_doublebw_vlsu
                              ((intf==0) ? coalesce_commit[0] & (vrf_commit_bypass | vrf_commit_waiting_q[1]) & vlsu_buf_empty_i : 1'b0)) &
                             ((intf==1) ? (vrf_wvalid_i[0] & (coalesce_q[1].rsp.id == coalesce_q[0].rsp.id)) : 1'b1) &
                             !vlsu_buf_full_i;
-    assign vrf_id_o[intf] = {coalesce_q[intf].rsp.id, mem_spatz_req.id, commit_insn_q.id};
+    assign vrf_id_o[intf] = {coalesce_q[intf].rsp.id, (state_q == VLSU_ReadingV0_t) ? commit_insn_q.id : mem_spatz_req.id, commit_insn_q.id};
     // The spill register may be popped when the coalescing buffer can accept:
     //   - buffer is empty, OR
     //   - buffer is still accumulating (not yet commit-ready), OR
