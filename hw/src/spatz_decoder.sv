@@ -1138,6 +1138,8 @@ module spatz_decoder
 
             default: illegal_instr = 1'b1;
           endcase // Arithmetic Instruction Type
+          if (!arith_vm && !decoder_req_i.vtype.vma && spatz_req.op inside {VMSEQ, VMSNE, VMSLTU, VMSLT, VMSLEU, VMSLE, VMSGTU, VMSGT, VFCMP})
+            spatz_req.vd_is_src = 1'b1;
         end
 
         // Move to the scalar RF
@@ -1619,6 +1621,8 @@ module spatz_decoder
 
               default;
             endcase
+            if (!arith_vm && !decoder_req_i.vtype.vma && spatz_req.op inside {VMSEQ, VMSNE, VMSLTU, VMSLT, VMSLEU, VMSLE, VMSGTU, VMSGT, VFCMP})
+              spatz_req.vd_is_src = 1'b1;
           end
         end
 
