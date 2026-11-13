@@ -1159,11 +1159,7 @@ module spatz_controller
     spatz_req_o = spatz_req;
     lmul_log2   = $signed({vtype_q.vlmul[2], vtype_q.vlmul});
 
-<<<<<<< HEAD
     if (spatz_req.ex_unit == LSU && !emul_is_lmul) begin
-=======
-    if (spatz_req.ex_unit == LSU && !(spatz_req.op inside {VLX, VLXE, VSXE})) begin
->>>>>>> 2f153d0 (VLSU related fixes (#28))
       emul_log2 = lmul_log2 + $signed({1'b0, spatz_req.vtype.vsew}) - $signed({1'b0, vtype_q.vsew});
       spatz_req_o.vtype.vlmul = rvv_pkg::vlmul_e'(emul_log2[2:0]);
     end
