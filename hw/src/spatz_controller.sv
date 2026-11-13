@@ -298,11 +298,14 @@ module spatz_controller
   logic issue_vl_nz;
   assign issue_vl_nz = (vl_q != '0) || (buffer_spatz_req.op_arith.is_scalar && (buffer_spatz_req.ex_unit inside {VFU, SLD}));
 
+<<<<<<< HEAD
   // LSU ops whose EMUL is LMUL itself rather than (EEW/SEW)*LMUL:
   // indexed loads/stores (data EMUL = LMUL) and whole-register ops (EMUL = NREG, carried in vlmul)
   logic emul_is_lmul;
   assign emul_is_lmul = spatz_req.op inside {VLX, VLXE, VSXE, VLRE, VSR, VLM, VSM};
 
+=======
+>>>>>>> 2f153d0 (VLSU related fixes (#28))
   ////////////////
   // Scoreboard //
   ////////////////
@@ -438,9 +441,14 @@ module spatz_controller
     vd_span  = lmul_val;
 
     if (spatz_req.ex_unit == LSU) begin
+<<<<<<< HEAD
       if (emul_is_lmul) begin
         emul_val = lmul_val;
         vd_span  = nf_fields * lmul_val;
+=======
+      if (spatz_req.op inside {VLX, VLXE, VSXE}) begin
+        emul_val = lmul_val;
+>>>>>>> 2f153d0 (VLSU related fixes (#28))
       end else begin
         if (eew > sew)      emul_val = lmul_val << (eew - sew);
         else if (eew < sew) emul_val = (lmul_val >> (sew - eew)) == 0 ? 1 : (lmul_val >> (sew - eew));
@@ -914,6 +922,7 @@ module spatz_controller
 
         LSU: begin
           // Overwrite vl and vstart in request (preserve vtype with vsew)
+<<<<<<< HEAD
           spatz_req.vl          = vl_q;
           spatz_req.vstart      = vstart_q;
           if (spatz_req.op inside {VLRE, VSR}) begin
@@ -921,6 +930,11 @@ module spatz_controller
           end else if (!(spatz_req.op inside {VLRE, VSR, VLM, VSM})) begin
             spatz_req.vtype.vlmul = vtype_q.vlmul;
           end
+=======
+          spatz_req.vtype.vlmul = vtype_q.vlmul;
+          spatz_req.vl          = vl_q;
+          spatz_req.vstart      = vstart_q;
+>>>>>>> 2f153d0 (VLSU related fixes (#28))
           // The decoder's load/store branches set `op_vtl.old_vd = ls_vd`
           // unconditionally (the field stays defined regardless of
           // VENTAGLIO), but they comment out the direct `spatz_req.vd = ls_vd`
@@ -1137,7 +1151,11 @@ module spatz_controller
     spatz_req_o = spatz_req;
     lmul_log2   = $signed({vtype_q.vlmul[2], vtype_q.vlmul});
 
+<<<<<<< HEAD
     if (spatz_req.ex_unit == LSU && !emul_is_lmul) begin
+=======
+    if (spatz_req.ex_unit == LSU && !(spatz_req.op inside {VLX, VLXE, VSXE})) begin
+>>>>>>> 2f153d0 (VLSU related fixes (#28))
       emul_log2 = lmul_log2 + $signed({1'b0, spatz_req.vtype.vsew}) - $signed({1'b0, vtype_q.vsew});
       spatz_req_o.vtype.vlmul = rvv_pkg::vlmul_e'(emul_log2[2:0]);
     end
