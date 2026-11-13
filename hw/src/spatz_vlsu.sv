@@ -125,6 +125,20 @@ module spatz_vlsu
       end
     endcase
 
+    if (spatz_req_i.op == VLRE || spatz_req_i.op == VSR) begin
+      spatz_req_d.vl             = (VLEN / 8) << spatz_req_i.vtype.vlmul[1:0];
+      spatz_req_d.vtype.vsew     = EW_8;
+      spatz_req_d.op_mem.vm      = 1'b1;
+      spatz_req_d.vstart         = spatz_req_i.vstart;
+    end
+
+    if (spatz_req_i.op == VLM || spatz_req_i.op == VSM) begin
+      spatz_req_d.vl             = (spatz_req_i.vl + 7) >> 3; // ceil(vl/8)
+      spatz_req_d.vstart         = spatz_req_i.vstart;
+      spatz_req_d.vtype.vsew     = EW_8;
+      spatz_req_d.op_mem.vm      = 1'b1; // Force masking off during the load
+    end
+
 `ifdef VENTAGLIO
     // For VLX (Ventaglio indexed load), the effective number of memory beats
     // is reduced by the index width: VL elements packed into an index vector
@@ -147,7 +161,9 @@ module spatz_vlsu
   // Do we have a strided memory access
   logic mem_is_unit_strided;
   assign mem_is_unit_strided = mem_spatz_req_valid &&
-                              ((mem_spatz_req.op == VLE) || (mem_spatz_req.op == VSE));
+                              ((mem_spatz_req.op == VLE) || (mem_spatz_req.op == VSE) ||
+                              (mem_spatz_req.op == VLRE) || (mem_spatz_req.op == VSR) ||
+                              (mem_spatz_req.op == VLM)  || (mem_spatz_req.op == VSM));
 
   logic mem_is_strided;
   assign mem_is_strided = mem_spatz_req_valid &&
@@ -861,7 +877,7 @@ module spatz_vlsu
   assign vrf_wdata_o = coalesce_q.wdata;
   assign vrf_wbe_o   = coalesce_q.wbe;
   assign vrf_we_o    = coalesce_commit;
-  assign vrf_id_o    = {coalesce_q.rsp.id, mem_spatz_req.id, commit_insn_q.id};
+  assign vrf_id_o    = {coalesce_q.rsp.id, (state_q == VLSU_ReadingV0_t) ? commit_insn_q.id : mem_spatz_req.id, commit_insn_q.id};
 
   // The spill register may be popped when the coalescing buffer can accept:
   //   - buffer is empty, OR
@@ -1320,7 +1336,7 @@ module spatz_vlsu
     // Advance to the next index word only when no port that still has indices to consume needs the current one
     if (mem_is_indexed && |mem_idx_vrf_fetch_pending && !(|(mem_idx_vrf_fetch_pending & mem_idx_word_ok)))
       vs2_elem_id_d = vs2_elem_id_q + 1;
-    if (mem_spatz_req_ready)
+    if (mem_spatz_req_ready || seg_completed)
       vs2_elem_id_d = '0;
 
     if (commit_insn_valid && commit_insn_q.is_load) begin

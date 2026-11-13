@@ -139,12 +139,12 @@ package spatz_pkg;
     // Slide instructions
     VSLIDEUP, VSLIDEDOWN,
     // Load instructions
-    VLE, VLSE, VLXE, VLSEG,
+    VLE, VLM, VLRE, VLSE, VLXE, VLSEG,
     // Ventaglio (VTL) custom load: vlx32.v — indexed load whose index
     // vreg lives in the VTL bank rather than the regular VRF.
     VLX,
     // Store instructions
-    VSE, VSSE, VSXE, VSSEG,
+    VSE, VSM, VSR, VSSE, VSXE, VSSEG,
     // Config instruction
     VCFG,
     // VCSR
@@ -201,7 +201,9 @@ package spatz_pkg;
     logic is_scalar;
     logic is_narrowing;
     logic is_reduction;
+    logic is_ordered;
     logic switch_rs1_rd;
+    logic is_int_scalar_move;
 
     logic widen_vs1;
     logic widen_vs2;
@@ -488,6 +490,30 @@ package spatz_pkg;
     widen_fp8_to_fp16.sign     = operand.sign;
     widen_fp8_to_fp16.exponent = operand.exponent;
     widen_fp8_to_fp16.mantissa = {operand.mantissa, 8'b0};
+  endfunction
+  
+  function automatic spatz_fp16alt_t widen_fp8_to_fp16alt(spatz_fp8_t operand);
+    widen_fp8_to_fp16alt.sign     = operand.sign;
+    widen_fp8_to_fp16alt.exponent = (operand.exponent == '0) ? '0 : operand.exponent + 112;
+    widen_fp8_to_fp16alt.mantissa = {operand.mantissa, 5'b0};
+  endfunction
+
+  function automatic spatz_fp16_t widen_fp8alt_to_fp16(spatz_fp8alt_t operand);
+    widen_fp8alt_to_fp16.sign = operand.sign;
+    widen_fp8alt_to_fp16.exponent = operand.exponent + 8;
+    widen_fp8alt_to_fp16.mantissa = {operand.mantissa, 7'b0};
+  endfunction
+
+  function automatic spatz_fp16alt_t widen_fp8alt_to_fp16alt(spatz_fp8alt_t operand);
+    widen_fp8alt_to_fp16alt.sign = operand.sign;
+    widen_fp8alt_to_fp16alt.exponent = operand.exponent + 120;
+    widen_fp8alt_to_fp16alt.mantissa = {operand.mantissa, 4'b0};
+  endfunction
+
+  function automatic spatz_fp32_t widen_fp16alt_to_fp32(spatz_fp16alt_t operand);
+    widen_fp16alt_to_fp32.sign = operand.sign;
+    widen_fp16alt_to_fp32.exponent = operand.exponent;
+    widen_fp16alt_to_fp32.mantissa = {operand.mantissa, 16'b0};
   endfunction
 
   function automatic spatz_fp16alt_t widen_fp8_to_fp16alt(spatz_fp8_t operand);

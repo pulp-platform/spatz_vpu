@@ -281,16 +281,16 @@ module spatz_controller
   fall_through_register #(
     .T(spatz_req_t)
   ) i_req_buffer (
-    .clk_i     (clk_i                                    ),
-    .rst_ni    (rst_ni                                   ),
-    .clr_i     (1'b0                                     ),
-    .testmode_i(1'b0                                     ),
-    .ready_o   (req_buffer_ready                         ),
-    .valid_o   (req_buffer_valid                         ),
-    .data_i    (decoder_rsp.spatz_req                    ),
-    .valid_i   (decoder_rsp_valid && !decoder_rsp_illegal),
-    .data_o    (buffer_spatz_req                         ),
-    .ready_i   (req_buffer_pop                           )
+    .clk_i     (clk_i                                                          ),
+    .rst_ni    (rst_ni                                                         ),
+    .clr_i     (1'b0                                                           ),
+    .testmode_i(1'b0                                                           ),
+    .ready_o   (req_buffer_ready                                               ),
+    .valid_o   (req_buffer_valid                                               ),
+    .data_i    (decoder_rsp.spatz_req                                          ),
+    .valid_i   (decoder_rsp_valid && !decoder_rsp_illegal && issue_rsp_o.accept),
+    .data_o    (buffer_spatz_req                                               ),
+    .ready_i   (req_buffer_pop                                                 )
   );
 
   // vl != 0 as seen by the issue guards, independent of spatz_req_valid:
@@ -298,6 +298,14 @@ module spatz_controller
   logic issue_vl_nz;
   assign issue_vl_nz = (vl_q != '0) || (buffer_spatz_req.op_arith.is_scalar && (buffer_spatz_req.ex_unit inside {VFU, SLD}));
 
+<<<<<<< HEAD
+  // LSU ops whose EMUL is LMUL itself rather than (EEW/SEW)*LMUL:
+  // indexed loads/stores (data EMUL = LMUL) and whole-register ops (EMUL = NREG, carried in vlmul)
+  logic emul_is_lmul;
+  assign emul_is_lmul = spatz_req.op inside {VLX, VLXE, VSXE, VLRE, VSR, VLM, VSM};
+
+=======
+>>>>>>> 2f153d0 (VLSU related fixes (#28))
   ////////////////
   // Scoreboard //
   ////////////////
@@ -433,8 +441,14 @@ module spatz_controller
     vd_span  = lmul_val;
 
     if (spatz_req.ex_unit == LSU) begin
+<<<<<<< HEAD
+      if (emul_is_lmul) begin
+        emul_val = lmul_val;
+        vd_span  = nf_fields * lmul_val;
+=======
       if (spatz_req.op inside {VLX, VLXE, VSXE}) begin
         emul_val = lmul_val;
+>>>>>>> 2f153d0 (VLSU related fixes (#28))
       end else begin
         if (eew > sew)      emul_val = lmul_val << (eew - sew);
         else if (eew < sew) emul_val = (lmul_val >> (sew - eew)) == 0 ? 1 : (lmul_val >> (sew - eew));
@@ -744,7 +758,7 @@ module spatz_controller
           if (span_vd[v]) read_table_d[v][spatz_req.id] = 1'b1;
       end
       // tackling v0 RAW hazard
-      if (!spatz_req.op_arith.vm) begin
+      if (!spatz_req.op_arith.vm || spatz_req.op_arith.use_carry_borrow_in) begin
         scoreboard_d[spatz_req.id].deps[write_table_d[0].id] |= write_table_d[0].valid;
         read_table_d[0][spatz_req.id] = 1'b1;
       end
@@ -816,11 +830,26 @@ module spatz_controller
   // Issuing //
   /////////////
 
+  // Running instructions
+  logic      [NrParallelInstructions-1:0] running_insn_d, running_insn_q;
+  spatz_id_t                              next_insn_id;
+  logic                                   running_insn_full;
+  `FF(running_insn_q, running_insn_d, '0)
+  logic                                   insn_shortcut_en;
+  spatz_id_t                              insn_shortcut_id;
+
   // Retire CSR instruction and write back result to main core.
   logic retire_csr;
 
   // Response channel to the core is ready
   logic rsp_ready_d;
+
+  // vxsat accesses must observe every older saturating instruction
+  logic vxsat_access;
+  assign vxsat_access = spatz_req.op == VCSR &&
+                        (spatz_req.op_csr.addr == riscv_instr::CSR_VXSAT ||
+                        spatz_req.op_cfg.write_vxsat || spatz_req.op_cfg.set_vxsat ||
+                        spatz_req.op_cfg.clear_vxsat);
 
   // We stall issuing a new instruction if the corresponding execution unit is
   // not ready yet. Or we have a change in LMUL, for which we need to let all the
@@ -832,7 +861,7 @@ module spatz_controller
   assign vfu_stall   = ~vfu_req_ready_i & (spatz_req.ex_unit == VFU);
   assign vlsu_stall  = ~vlsu_req_ready_i & (spatz_req.ex_unit == LSU);
   // The CSR response has no other backpressure
-  assign csr_stall   = ~rsp_ready_d & (spatz_req.ex_unit == CON);
+  assign csr_stall   = (~rsp_ready_d & (spatz_req.ex_unit == CON)) || (vxsat_access && |running_insn_q);;
 `ifdef VENTAGLIO
   // VSLDU stalls only for true SLD-routed non-VTL ops (the VTL/VSLDU
   // shared-port arbiter routes use_vtl ops through ventaglio instead).
@@ -846,14 +875,6 @@ module spatz_controller
   assign vsldu_stall = ~vsldu_req_ready_i & (spatz_req.ex_unit == SLD);
   assign vtl_stall   = 1'b0;
 `endif
-
-  // Running instructions
-  logic      [NrParallelInstructions-1:0] running_insn_d, running_insn_q;
-  spatz_id_t                              next_insn_id;
-  logic                                   running_insn_full;
-  `FF(running_insn_q, running_insn_d, '0)
-  logic                                   insn_shortcut_en;
-  spatz_id_t                              insn_shortcut_id;
 
   find_first_one #(
     .WIDTH(NrParallelInstructions)
@@ -908,9 +929,19 @@ module spatz_controller
 
         LSU: begin
           // Overwrite vl and vstart in request (preserve vtype with vsew)
+<<<<<<< HEAD
+          spatz_req.vl          = vl_q;
+          spatz_req.vstart      = vstart_q;
+          if (spatz_req.op inside {VLRE, VSR}) begin
+            spatz_req.vl = vlen_t'((VLENB << spatz_req.vtype.vlmul[1:0]) >> int'(spatz_req.vtype.vsew));
+          end else if (!(spatz_req.op inside {VLRE, VSR, VLM, VSM})) begin
+            spatz_req.vtype.vlmul = vtype_q.vlmul;
+          end
+=======
           spatz_req.vtype.vlmul = vtype_q.vlmul;
           spatz_req.vl          = vl_q;
           spatz_req.vstart      = vstart_q;
+>>>>>>> 2f153d0 (VLSU related fixes (#28))
           // The decoder's load/store branches set `op_vtl.old_vd = ls_vd`
           // unconditionally (the field stays defined regardless of
           // VENTAGLIO), but they comment out the direct `spatz_req.vd = ls_vd`
@@ -1010,10 +1041,11 @@ module spatz_controller
           end
         end
         LSU: begin
-          issue_rsp_o.loadstore = 1'b1;
           if (vtype_q.vill) begin
             issue_rsp_o.accept = 1'b0;
             issue_rsp_o.exception = 1'b1;
+          end else begin
+            issue_rsp_o.loadstore = 1'b1;
           end
         end
         SLD: begin
@@ -1127,7 +1159,7 @@ module spatz_controller
     spatz_req_o = spatz_req;
     lmul_log2   = $signed({vtype_q.vlmul[2], vtype_q.vlmul});
 
-    if (spatz_req.ex_unit == LSU && !(spatz_req.op inside {VLX, VLXE, VSXE})) begin
+    if (spatz_req.ex_unit == LSU && !emul_is_lmul) begin
       emul_log2 = lmul_log2 + $signed({1'b0, spatz_req.vtype.vsew}) - $signed({1'b0, vtype_q.vsew});
       spatz_req_o.vtype.vlmul = rvv_pkg::vlmul_e'(emul_log2[2:0]);
     end

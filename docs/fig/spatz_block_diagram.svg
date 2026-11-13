@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2160" height="1350" viewBox="0 0 2160 1350" font-family="Consolas, 'DejaVu Sans Mono', monospace">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<defs>
+<marker id="ah1e1e1e" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#1e1e1e"/></marker>
+<marker id="ah2f9e44" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#2f9e44"/></marker>
+<marker id="ah1971c2" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#1971c2"/></marker>
+</defs>
+<rect x="20" y="20" width="2120" height="1310" rx="8" fill="none" stroke="#868e96" stroke-width="1" stroke-dasharray="8 6"/>
+<rect x="850" y="220" width="460" height="700" rx="8" fill="#fff3bf" stroke="#1e1e1e" stroke-width="3"/>
+<rect x="870" y="320" width="200" height="90" rx="8" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="1090" y="320" width="200" height="90" rx="8" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="870" y="470" width="200" height="90" rx="8" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="1090" y="470" width="200" height="90" rx="8" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="870" y="620" width="200" height="90" rx="8" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="1090" y="620" width="200" height="90" rx="8" fill="#ffffff" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="850" y="70" width="460" height="60" rx="8" fill="#f1f3f5" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="40" y="220" width="170" height="760" rx="8" fill="#f1f3f5" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="370" y="310" width="200" height="170" rx="8" fill="#f1f3f5" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="370" y="570" width="200" height="170" rx="8" fill="#f1f3f5" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="1640" y="280" width="230" height="330" rx="8" fill="#f1f3f5" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="1930" y="280" width="180" height="330" rx="8" fill="#f1f3f5" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="870" y="1060" width="200" height="90" rx="8" fill="#f1f3f5" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="1130" y="1060" width="200" height="90" rx="8" fill="#f1f3f5" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="1640" y="1060" width="230" height="90" rx="8" fill="#f1f3f5" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="1130" y="1210" width="200" height="70" rx="8" fill="#f1f3f5" stroke="#1e1e1e" stroke-width="2"/>
+<rect x="40" y="1170" width="360" height="110" rx="8" fill="#ffffff" stroke="#868e96" stroke-width="1"/>
+<line x1="890" y1="130" x2="890" y2="220" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="1005" y1="130" x2="1005" y2="220" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="1120" y1="130" x2="1120" y2="220" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="1235" y1="130" x2="1235" y2="220" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="210" y1="395" x2="370" y2="395" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="370" y1="425" x2="210" y2="425" stroke="#2f9e44" stroke-width="2" marker-end="url(#ah2f9e44)"/>
+<line x1="570" y1="340" x2="850" y2="340" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="570" y1="390" x2="850" y2="390" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="850" y1="440" x2="570" y2="440" stroke="#2f9e44" stroke-width="2" marker-end="url(#ah2f9e44)"/>
+<line x1="850" y1="520" x2="210" y2="520" stroke="#2f9e44" stroke-width="2" marker-end="url(#ah2f9e44)"/>
+<line x1="370" y1="655" x2="210" y2="655" stroke="#2f9e44" stroke-width="2" marker-end="url(#ah2f9e44)"/>
+<line x1="210" y1="685" x2="370" y2="685" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="850" y1="605" x2="570" y2="605" stroke="#2f9e44" stroke-width="2" marker-end="url(#ah2f9e44)"/>
+<line x1="850" y1="655" x2="570" y2="655" stroke="#2f9e44" stroke-width="2" marker-end="url(#ah2f9e44)"/>
+<line x1="570" y1="705" x2="850" y2="705" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="850" y1="800" x2="210" y2="800" stroke="#2f9e44" stroke-width="2" marker-end="url(#ah2f9e44)"/>
+<line x1="850" y1="836" x2="210" y2="836" stroke="#2f9e44" stroke-width="2" marker-end="url(#ah2f9e44)"/>
+<line x1="210" y1="872" x2="850" y2="872" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="210" y1="908" x2="850" y2="908" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="850" y1="944" x2="210" y2="944" stroke="#2f9e44" stroke-width="2" marker-end="url(#ah2f9e44)"/>
+<line x1="1870" y1="420" x2="1930" y2="420" stroke="#1e1e1e" stroke-width="2" marker-end="url(#ah1e1e1e)"/>
+<line x1="1930" y1="470" x2="1870" y2="470" stroke="#1e1e1e" stroke-width="2" marker-end="url(#ah1e1e1e)"/>
+<line x1="1310" y1="330" x2="1640" y2="330" stroke="#2f9e44" stroke-width="2" marker-end="url(#ah2f9e44)"/>
+<line x1="1310" y1="385" x2="1640" y2="385" stroke="#2f9e44" stroke-width="2" marker-end="url(#ah2f9e44)"/>
+<line x1="1640" y1="440" x2="1310" y2="440" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="1640" y1="495" x2="1310" y2="495" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="1640" y1="550" x2="1310" y2="550" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="930" y1="920" x2="930" y2="1060" stroke="#2f9e44" stroke-width="2" marker-end="url(#ah2f9e44)"/>
+<line x1="1010" y1="1060" x2="1010" y2="920" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="125.0" y1="980" x2="125.0" y2="1105" stroke="#1e1e1e" stroke-width="2" marker-end="url(#ah1e1e1e)"/>
+<line x1="125.0" y1="1105" x2="870" y2="1105" stroke="#1e1e1e" stroke-width="2" marker-end="url(#ah1e1e1e)"/>
+<line x1="1070" y1="1105" x2="1130" y2="1105" stroke="#1e1e1e" stroke-width="2" marker-end="url(#ah1e1e1e)"/>
+<line x1="1330" y1="1090" x2="1640" y2="1090" stroke="#1e1e1e" stroke-width="2" marker-end="url(#ah1e1e1e)"/>
+<line x1="1230" y1="1150" x2="1230" y2="1210" stroke="#1e1e1e" stroke-width="2" marker-end="url(#ah1e1e1e)"/>
+<line x1="1755.0" y1="1060" x2="1755.0" y2="610" stroke="#1e1e1e" stroke-width="2" marker-end="url(#ah1e1e1e)"/>
+<line x1="52" y1="1215" x2="112" y2="1215" stroke="#1971c2" stroke-width="2" marker-end="url(#ah1971c2)"/>
+<line x1="52" y1="1245" x2="112" y2="1245" stroke="#2f9e44" stroke-width="2" marker-end="url(#ah2f9e44)"/>
+<text x="30" y="42" font-size="14" fill="#868e96" text-anchor="start">spatz_cluster  (hw/system/spatz_cluster/src/spatz_cluster.sv)  —  core complex: spatz_cc (hw/ip/spatz_cc/src/spatz_cc.sv)</text>
+<text x="1080.0" y="258" font-size="24" fill="#1e1e1e" text-anchor="middle" font-weight="bold">spatz</text>
+<text x="1080.0" y="280" font-size="14" fill="#1e1e1e" text-anchor="middle">hw/src/spatz.sv  (DUT)</text>
+<text x="1080.0" y="298" font-size="12" fill="#495057" text-anchor="middle">default cfg: N_FPU=4, N_IPU=1, VLEN=512, ELEN=64, NrMemPorts=4</text>
+<text x="970.0" y="344" font-size="14" fill="#1e1e1e" text-anchor="middle" font-weight="bold">spatz_fpu_sequencer</text>
+<text x="970.0" y="362.2" font-size="12" fill="#495057" text-anchor="middle">FP regfile, FP LSU</text>
+<text x="1190.0" y="344" font-size="14" fill="#1e1e1e" text-anchor="middle" font-weight="bold">spatz_controller</text>
+<text x="1190.0" y="362.2" font-size="12" fill="#495057" text-anchor="middle">decoder, CSRs, scoreboard</text>
+<text x="970.0" y="494" font-size="14" fill="#1e1e1e" text-anchor="middle" font-weight="bold">spatz_vfu</text>
+<text x="970.0" y="512.2" font-size="12" fill="#495057" text-anchor="middle">4x FPnew + 1x IPU</text>
+<text x="1190.0" y="494" font-size="14" fill="#1e1e1e" text-anchor="middle" font-weight="bold">spatz_vlsu</text>
+<text x="1190.0" y="512.2" font-size="12" fill="#495057" text-anchor="middle">4 memory ports</text>
+<text x="970.0" y="644" font-size="14" fill="#1e1e1e" text-anchor="middle" font-weight="bold">spatz_vsldu</text>
+<text x="970.0" y="662.2" font-size="12" fill="#495057" text-anchor="middle">slides, vcompress</text>
+<text x="1190.0" y="644" font-size="14" fill="#1e1e1e" text-anchor="middle" font-weight="bold">spatz_vrf</text>
+<text x="1190.0" y="662.2" font-size="12" fill="#495057" text-anchor="middle">4 banks, latch-based</text>
+<text x="1080.0" y="752" font-size="12" fill="#868e96" text-anchor="middle">[ ventaglio ]  only with `define VENTAGLIO</text>
+<text x="1080.0" y="94" font-size="14" fill="#1e1e1e" text-anchor="middle" font-weight="bold">cluster clock / reset / hart id</text>
+<text x="1080.0" y="112.2" font-size="12" fill="#495057" text-anchor="middle">spatz_cluster → spatz_cc</text>
+<text x="896" y="174" font-size="14" fill="#1971c2" text-anchor="start">clk_i</text>
+<text x="1011" y="174" font-size="14" fill="#1971c2" text-anchor="start">rst_ni</text>
+<text x="1126" y="174" font-size="14" fill="#1971c2" text-anchor="start">testmode_i</text>
+<text x="1241" y="174" font-size="14" fill="#1971c2" text-anchor="start">hart_id_i[31:0]</text>
+<text x="125.0" y="246" font-size="16" fill="#1e1e1e" text-anchor="middle" font-weight="bold">Snitch core</text>
+<text x="125.0" y="264.8" font-size="12" fill="#495057" text-anchor="middle">hw/ip/snitch/src/</text>
+<text x="125.0" y="281.0" font-size="12" fill="#495057" text-anchor="middle">snitch.sv</text>
+<text x="125.0" y="297.2" font-size="12" fill="#495057" text-anchor="middle"></text>
+<text x="125.0" y="313.4" font-size="12" fill="#495057" text-anchor="middle">integer core,</text>
+<text x="125.0" y="329.59999999999997" font-size="12" fill="#495057" text-anchor="middle">fcsr, acc offload</text>
+<text x="125.0" y="345.79999999999995" font-size="12" fill="#495057" text-anchor="middle">master</text>
+<text x="470.0" y="334" font-size="14" fill="#1e1e1e" text-anchor="middle" font-weight="bold">stream_demux</text>
+<text x="470.0" y="352.2" font-size="12" fill="#495057" text-anchor="middle">i_stream_demux_offload</text>
+<text x="470.0" y="368.4" font-size="12" fill="#495057" text-anchor="middle">sel = acc_qreq.addr</text>
+<text x="470.0" y="384.59999999999997" font-size="12" fill="#495057" text-anchor="middle">(SPATZ / DMA)</text>
+<text x="216" y="389" font-size="12" fill="#1971c2" text-anchor="start">acc_qvalid / acc_qreq</text>
+<text x="216" y="442" font-size="12" fill="#2f9e44" text-anchor="start">acc_qready</text>
+<text x="578" y="334" font-size="14" fill="#1971c2" text-anchor="start">issue_valid_i</text>
+<text x="578" y="384" font-size="14" fill="#1971c2" text-anchor="start">issue_req_i : spatz_issue_req_t</text>
+<text x="578" y="434" font-size="14" fill="#2f9e44" text-anchor="start">issue_ready_o</text>
+<text x="218" y="514" font-size="14" fill="#2f9e44" text-anchor="start">issue_rsp_o : spatz_issue_rsp_t   (→ Snitch acc_qrsp_i, not demuxed)</text>
+<text x="470.0" y="594" font-size="14" fill="#1e1e1e" text-anchor="middle" font-weight="bold">stream_arbiter</text>
+<text x="470.0" y="612.2" font-size="12" fill="#495057" text-anchor="middle">i_stream_arbiter_offload</text>
+<text x="470.0" y="628.4000000000001" font-size="12" fill="#495057" text-anchor="middle">merges Spatz + DMA</text>
+<text x="470.0" y="644.6000000000001" font-size="12" fill="#495057" text-anchor="middle">responses</text>
+<text x="216" y="649" font-size="12" fill="#2f9e44" text-anchor="start">acc_pvalid / acc_prsp</text>
+<text x="216" y="702" font-size="12" fill="#1971c2" text-anchor="start">acc_pready</text>
+<text x="578" y="599" font-size="14" fill="#2f9e44" text-anchor="start">rsp_valid_o</text>
+<text x="578" y="649" font-size="14" fill="#2f9e44" text-anchor="start">rsp_o : spatz_rsp_t</text>
+<text x="578" y="699" font-size="14" fill="#1971c2" text-anchor="start">rsp_ready_i</text>
+<text x="218" y="794" font-size="14" fill="#2f9e44" text-anchor="start">spatz_mem_finished_o[1:0]</text>
+<text x="218" y="830" font-size="14" fill="#2f9e44" text-anchor="start">spatz_mem_str_finished_o[1:0]</text>
+<text x="218" y="866" font-size="14" fill="#1971c2" text-anchor="start">fpu_rnd_mode_i : roundmode_e</text>
+<text x="218" y="902" font-size="14" fill="#1971c2" text-anchor="start">fpu_fmt_mode_i : fmt_mode_t</text>
+<text x="218" y="938" font-size="14" fill="#2f9e44" text-anchor="start">fpu_status_o : status_t</text>
+<text x="218" y="1002" font-size="12" fill="#495057" text-anchor="start">[1] = VLSU (vector), [0] = FP LSU (scalar FP)</text>
+<text x="1755.0" y="305" font-size="15" fill="#1e1e1e" text-anchor="middle" font-weight="bold">spatz_tcdm_</text>
+<text x="1755.0" y="324.5" font-size="15" fill="#1e1e1e" text-anchor="middle" font-weight="bold">interconnect</text>
+<text x="1755.0" y="343.0" font-size="12" fill="#495057" text-anchor="middle">i_tcdm_interconnect</text>
+<text x="1755.0" y="359.2" font-size="12" fill="#495057" text-anchor="middle">(spatz_cluster.sv)</text>
+<text x="1755.0" y="375.4" font-size="12" fill="#495057" text-anchor="middle"></text>
+<text x="1755.0" y="391.59999999999997" font-size="12" fill="#495057" text-anchor="middle">ports [0..3]: Spatz VLSU</text>
+<text x="1755.0" y="407.79999999999995" font-size="12" fill="#495057" text-anchor="middle">port  [4]: Snitch + FP LSU</text>
+<text x="1755.0" y="423.99999999999994" font-size="12" fill="#495057" text-anchor="middle">(via reqrsp_to_tcdm)</text>
+<text x="2020.0" y="305" font-size="15" fill="#1e1e1e" text-anchor="middle" font-weight="bold">TCDM / L1</text>
+<text x="2020.0" y="323.5" font-size="12" fill="#495057" text-anchor="middle">16 SRAM banks</text>
+<text x="2020.0" y="339.7" font-size="12" fill="#495057" text-anchor="middle">128 KiB</text>
+<text x="2020.0" y="355.9" font-size="12" fill="#495057" text-anchor="middle">tc_sram_impl +</text>
+<text x="2020.0" y="372.09999999999997" font-size="12" fill="#495057" text-anchor="middle">spatz_amo_shim</text>
+<text x="2020.0" y="388.29999999999995" font-size="12" fill="#495057" text-anchor="middle"></text>
+<text x="2020.0" y="404.49999999999994" font-size="12" fill="#495057" text-anchor="middle">fixed latency,</text>
+<text x="2020.0" y="420.69999999999993" font-size="12" fill="#495057" text-anchor="middle">in-order responses</text>
+<text x="1318" y="324" font-size="14" fill="#2f9e44" text-anchor="start">spatz_mem_req_o[3:0] : spatz_mem_req_t</text>
+<text x="1318" y="379" font-size="14" fill="#2f9e44" text-anchor="start">spatz_mem_req_valid_o[3:0]</text>
+<text x="1318" y="434" font-size="14" fill="#1971c2" text-anchor="start">spatz_mem_req_ready_i[3:0]</text>
+<text x="1318" y="489" font-size="14" fill="#1971c2" text-anchor="start">spatz_mem_rsp_i[3:0] : spatz_mem_rsp_t</text>
+<text x="1318" y="544" font-size="14" fill="#1971c2" text-anchor="start">spatz_mem_rsp_valid_i[3:0]</text>
+<text x="1318" y="597" font-size="12" fill="#495057" text-anchor="start">no rsp ready: responses always accepted</text>
+<text x="1318" y="613" font-size="12" fill="#495057" text-anchor="start">one response per request, stores included</text>
+<text x="970.0" y="1084" font-size="14" fill="#1e1e1e" text-anchor="middle" font-weight="bold">reqrsp_mux</text>
+<text x="970.0" y="1102.2" font-size="12" fill="#495057" text-anchor="middle">i_reqrsp_mux</text>
+<text x="970.0" y="1118.4" font-size="12" fill="#495057" text-anchor="middle">Snitch data + FP LSU</text>
+<text x="1230.0" y="1084" font-size="14" fill="#1e1e1e" text-anchor="middle" font-weight="bold">reqrsp_demux</text>
+<text x="1230.0" y="1102.2" font-size="12" fill="#495057" text-anchor="middle">addr_decode_napot</text>
+<text x="1230.0" y="1118.4" font-size="12" fill="#495057" text-anchor="middle">TCDM range / SoC</text>
+<text x="1755.0" y="1084" font-size="14" fill="#1e1e1e" text-anchor="middle" font-weight="bold">reqrsp_to_tcdm</text>
+<text x="1755.0" y="1102.2" font-size="12" fill="#495057" text-anchor="middle">i_reqrsp_to_tcdm</text>
+<text x="1755.0" y="1118.4" font-size="12" fill="#495057" text-anchor="middle">→ interconnect port [4]</text>
+<text x="1230.0" y="1234" font-size="14" fill="#1e1e1e" text-anchor="middle" font-weight="bold">SoC / AXI</text>
+<text x="1230.0" y="1252.2" font-size="12" fill="#495057" text-anchor="middle">data_req_o of spatz_cc</text>
+<text x="700" y="984" font-size="14" fill="#2f9e44" text-anchor="start">fp_lsu_mem_req_o : dreq_t</text>
+<text x="1018" y="984" font-size="14" fill="#1971c2" text-anchor="start">fp_lsu_mem_rsp_i : drsp_t</text>
+<text x="135.0" y="1096" font-size="14" fill="#1e1e1e" text-anchor="start">Snitch data_req (reqrsp_iso)</text>
+<text x="1350" y="1082" font-size="14" fill="#1e1e1e" text-anchor="start">TCDM range</text>
+<text x="870" y="1172" font-size="12" fill="#868e96" text-anchor="start">MemPool-only ports (fp_lsu_mem_req_valid_o, ..._ready_i,</text>
+<text x="870" y="1188" font-size="12" fill="#868e96" text-anchor="start">..._rsp_valid_i, ..._rsp_ready_o) not shown</text>
+<text x="52" y="1194" font-size="14" fill="#1e1e1e" text-anchor="start" font-weight="bold">Legend</text>
+<text x="122" y="1221" font-size="14" fill="#1971c2" text-anchor="start">input of spatz (DUT)</text>
+<text x="122" y="1251" font-size="14" fill="#2f9e44" text-anchor="start">output of spatz (DUT)</text>
+<text x="52" y="1270" font-size="12" fill="#1e1e1e" text-anchor="start">black: cluster-internal connection</text>
+</svg>

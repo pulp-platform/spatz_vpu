@@ -96,6 +96,23 @@ module spatz_decoder
         riscv_instr::VLE16_V,
         riscv_instr::VLE32_V,
         riscv_instr::VLE64_V,
+        riscv_instr::VL1RE8_V,
+        riscv_instr::VL1RE16_V,
+        riscv_instr::VL1RE32_V,
+        riscv_instr::VL1RE64_V,
+        riscv_instr::VL2RE8_V,
+        riscv_instr::VL2RE16_V,
+        riscv_instr::VL2RE32_V,
+        riscv_instr::VL2RE64_V,
+        riscv_instr::VL4RE8_V,
+        riscv_instr::VL4RE16_V,
+        riscv_instr::VL4RE32_V,
+        riscv_instr::VL4RE64_V,
+        riscv_instr::VL8RE8_V,
+        riscv_instr::VL8RE16_V,
+        riscv_instr::VL8RE32_V,
+        riscv_instr::VL8RE64_V,
+        riscv_instr::VLM_V,
         riscv_instr::VLX8_V,
         riscv_instr::VLX16_V,
         riscv_instr::VLX32_V,
@@ -116,6 +133,11 @@ module spatz_decoder
         riscv_instr::VSE16_V,
         riscv_instr::VSE32_V,
         riscv_instr::VSE64_V,
+        riscv_instr::VS1R_V,
+        riscv_instr::VS2R_V,
+        riscv_instr::VS4R_V,
+        riscv_instr::VS8R_V,
+        riscv_instr::VSM_V,
         riscv_instr::VSSE8_V,
         riscv_instr::VSSE16_V,
         riscv_instr::VSSE32_V,
@@ -162,19 +184,61 @@ module spatz_decoder
               if (ls_nf == 3'b000) begin
                 spatz_req.op             = VLE;
                 spatz_req.op_mem.is_load = 1'b1;
-                spatz_req.op_vtl.old_vd      = ls_vd;
+                spatz_req.op_vtl.old_vd  = ls_vd;
                 spatz_req.use_vd         = 1'b1;
                 spatz_req.rs1            = decoder_req_i.rs1;
                 spatz_req.op_vtl.is_load_idx = 1'b0;
               end else begin
                 spatz_req.op             = VLSEG;
                 spatz_req.op_mem.is_load = 1'b1;
-                spatz_req.op_vtl.old_vd      = ls_vd;
+                spatz_req.op_vtl.old_vd  = ls_vd;
                 spatz_req.use_vd         = 1'b1;
                 spatz_req.rs1            = decoder_req_i.rs1;
                 spatz_req.op_vtl.is_load_idx = 1'b0;
                 spatz_req.nf             = ls_nf;
               end
+            end
+
+            riscv_instr::VL1RE8_V,
+            riscv_instr::VL1RE16_V,
+            riscv_instr::VL1RE32_V,
+            riscv_instr::VL1RE64_V,
+            riscv_instr::VL2RE8_V,
+            riscv_instr::VL2RE16_V,
+            riscv_instr::VL2RE32_V,
+            riscv_instr::VL2RE64_V,
+            riscv_instr::VL4RE8_V,
+            riscv_instr::VL4RE16_V,
+            riscv_instr::VL4RE32_V,
+            riscv_instr::VL4RE64_V,
+            riscv_instr::VL8RE8_V,
+            riscv_instr::VL8RE16_V,
+            riscv_instr::VL8RE32_V,
+            riscv_instr::VL8RE64_V: begin
+              spatz_req.op                 = VLRE;
+              spatz_req.op_mem.is_load     = 1'b1;
+              spatz_req.op_vtl.old_vd      = ls_vd;
+              spatz_req.use_vd             = 1'b1;
+              spatz_req.rs1                = decoder_req_i.rs1;
+              spatz_req.op_vtl.is_load_idx = 1'b0;
+              spatz_req.nf                 = '0;
+              spatz_req.vtype.vlmul        = vlmul_e'(ls_nf == 3'd7 ? LMUL_8 :
+                                                      ls_nf == 3'd3 ? LMUL_4 :
+                                                      ls_nf == 3'd1 ? LMUL_2 : LMUL_1);
+
+
+              if (!(ls_nf inside {3'd0, 3'd1, 3'd3, 3'd7})) illegal_instr = 1'b1;
+            end
+
+            riscv_instr::VLM_V: begin
+              spatz_req.op                 = VLM;
+              spatz_req.op_mem.is_load     = 1'b1;
+              spatz_req.op_vtl.old_vd      = ls_vd;
+              spatz_req.use_vd             = 1'b1;
+              spatz_req.rs1                = decoder_req_i.rs1;
+              spatz_req.op_vtl.is_load_idx = 1'b0;
+              spatz_req.vtype.vsew         = EW_8;
+              spatz_req.vtype.vlmul        = LMUL_1;   // always exactly one register
             end
 
             riscv_instr::VLX8_V,
@@ -238,6 +302,30 @@ module spatz_decoder
               // This is an indexed operation
               spatz_req.op_mem.ew  = spatz_req.vtype.vsew;
               spatz_req.vtype.vsew = decoder_req_i.vtype.vsew;
+
+              // Indexed segment load: the destination groups must not overlap the index group (reserved encoding)
+              if (ls_nf != 3'd0) begin
+                automatic logic signed [3:0] lmul_l2, iemul_l2;
+                automatic logic        [3:0] data_regs, idx_regs;
+                automatic logic        [6:0] vd_end, vs2_end;
+
+                // log2(LMUL): vlmul is already signed log2 (F8=-3 ... 8=3)
+                lmul_l2   = $signed({decoder_req_i.vtype.vlmul[2], decoder_req_i.vtype.vlmul});
+                // log2(index EMUL) = log2(LMUL) + log2(index EEW) - log2(SEW)
+                iemul_l2  = lmul_l2 + $signed({2'b00, spatz_req.op_mem.ew}) - $signed({2'b00, decoder_req_i.vtype.vsew});
+
+                // Registers occupied (fractional EMUL still occupies one register)
+                data_regs = (lmul_l2  > 0) ? (4'd1 << lmul_l2)  : 4'd1;  // data EMUL = LMUL for indexed
+                idx_regs  = (iemul_l2 > 0) ? (4'd1 << iemul_l2) : 4'd1;
+
+                vd_end    = 7'(ls_vd) + 7'(({1'b0, ls_nf} + 4'd1) * data_regs);  // vd .. vd + NFIELDS*EMUL - 1
+                vs2_end   = 7'(ls_s2) + 7'(idx_regs);                            // vs2 .. vs2 + idx EMUL - 1
+
+                // Two intervals [a, a_end) and [b, b_end) overlap iff a < b_end && b < a_end
+                if ((7'(ls_vd) < vs2_end) && (7'(ls_s2) < vd_end))
+                  illegal_instr = 1'b1;
+              end
+
             end
 
             riscv_instr::VSE8_V,
@@ -262,6 +350,37 @@ module spatz_decoder
                 spatz_req.op_vtl.is_load_idx = 1'b0;
                 spatz_req.nf             = ls_nf;
               end
+            end
+
+            riscv_instr::VS1R_V,
+            riscv_instr::VS2R_V,
+            riscv_instr::VS4R_V,
+            riscv_instr::VS8R_V: begin
+              spatz_req.op                 = VSR;
+              spatz_req.op_mem.is_load     = 1'b0;
+              spatz_req.op_vtl.old_vd      = ls_vd;
+              spatz_req.use_vd             = 1'b1;
+              spatz_req.vd_is_src          = 1'b1;
+              spatz_req.rs1                = decoder_req_i.rs1;
+              spatz_req.op_vtl.is_load_idx = 1'b0;
+              spatz_req.nf                 = '0;
+              spatz_req.vtype.vlmul        = vlmul_e'(ls_nf == 3'd7 ? LMUL_8 :
+                                                      ls_nf == 3'd3 ? LMUL_4 :
+                                                      ls_nf == 3'd1 ? LMUL_2 : LMUL_1);
+
+              if (!(ls_nf inside {3'd0, 3'd1, 3'd3, 3'd7})) illegal_instr = 1'b1;
+            end
+
+            riscv_instr::VSM_V: begin
+              spatz_req.op                 = VSM;
+              spatz_req.op_mem.is_load     = 1'b0;
+              spatz_req.op_vtl.old_vd      = ls_vd;
+              spatz_req.use_vd             = 1'b1;
+              spatz_req.vd_is_src          = 1'b1;
+              spatz_req.rs1                = decoder_req_i.rs1;
+              spatz_req.op_vtl.is_load_idx = 1'b0;
+              spatz_req.vtype.vsew         = EW_8;
+              spatz_req.vtype.vlmul        = LMUL_1;   // always exactly one register
             end
 
             riscv_instr::VSSE8_V,
@@ -595,13 +714,16 @@ module spatz_decoder
             riscv_instr::VADC_VVM,
             riscv_instr::VADC_VXM,
             riscv_instr::VADC_VIM: begin
-              spatz_req.op = VADC;
+              spatz_req.op                           = VADC;
+              spatz_req.op_arith.use_carry_borrow_in = 1'b1;
+              spatz_req.op_arith.vm                  = 1'b1;
             end
 
             riscv_instr::VMADC_VV,
             riscv_instr::VMADC_VX,
             riscv_instr::VMADC_VI: begin
               spatz_req.op = VMADC;
+              spatz_req.op_arith.vm = 1'b1;
             end
 
             riscv_instr::VMADC_VVM,
@@ -609,22 +731,27 @@ module spatz_decoder
             riscv_instr::VMADC_VIM: begin
               spatz_req.op                           = VMADC;
               spatz_req.op_arith.use_carry_borrow_in = 1'b1;
+              spatz_req.op_arith.vm                  = 1'b1;
             end
 
             riscv_instr::VSBC_VVM,
             riscv_instr::VSBC_VXM: begin
-              spatz_req.op = VSBC;
+              spatz_req.op                           = VSBC;
+              spatz_req.op_arith.use_carry_borrow_in = 1'b1;
+              spatz_req.op_arith.vm                  = 1'b1;
             end
 
             riscv_instr::VMSBC_VV,
             riscv_instr::VMSBC_VX: begin
               spatz_req.op = VMSBC;
+              spatz_req.op_arith.vm                  = 1'b1;
             end
 
             riscv_instr::VMSBC_VVM,
             riscv_instr::VMSBC_VXM: begin
               spatz_req.op                           = VMSBC;
               spatz_req.op_arith.use_carry_borrow_in = 1'b1;
+              spatz_req.op_arith.vm                  = 1'b1;
             end
 
             // Reductions
@@ -1011,6 +1138,8 @@ module spatz_decoder
 
             default: illegal_instr = 1'b1;
           endcase // Arithmetic Instruction Type
+          if (!arith_vm && !decoder_req_i.vtype.vma && spatz_req.op inside {VMSEQ, VMSNE, VMSLTU, VMSLT, VMSLEU, VMSLE, VMSGTU, VMSGT, VFCMP})
+            spatz_req.vd_is_src = 1'b1;
         end
 
         // Move to the scalar RF
@@ -1018,13 +1147,15 @@ module spatz_decoder
           automatic vreg_t arith_s2 = decoder_req_i.instr[24:20];
           automatic vreg_t arith_d  = decoder_req_i.instr[11:7];
 
-          spatz_req.op                 = VADD;
-          spatz_req.ex_unit            = VFU;
-          spatz_req.rd                 = arith_d;
-          spatz_req.use_rd             = 1'b1;
-          spatz_req.vs2                = arith_s2;
-          spatz_req.use_vs2            = 1'b1;
-          spatz_req.op_arith.is_scalar = 1'b1;
+          spatz_req.op                            = VADD;
+          spatz_req.ex_unit                       = VFU;
+          spatz_req.rd                            = arith_d;
+          spatz_req.use_rd                        = 1'b1;
+          spatz_req.vs2                           = arith_s2;
+          spatz_req.use_vs2                       = 1'b1;
+          spatz_req.op_arith.is_scalar            = 1'b1;
+          spatz_req.op_arith.is_int_scalar_move   = 1'b1;
+          spatz_req.vtype.vsew                    = decoder_req_i.vtype.vsew;
         end
 
         // Vector floating-point instructions
@@ -1291,6 +1422,7 @@ module spatz_decoder
               riscv_instr::VFREDOSUM_VS: begin
                 spatz_req.op                    = VFADD;
                 spatz_req.op_arith.is_reduction = 1'b1;
+                spatz_req.op_arith.is_ordered   = 1'b1;
                 // Switch vs1 and vs2
                 spatz_req.vs1                   = arith_s2;
                 spatz_req.vs2                   = arith_s1;
@@ -1489,6 +1621,8 @@ module spatz_decoder
 
               default;
             endcase
+            if (!arith_vm && !decoder_req_i.vtype.vma && spatz_req.op inside {VMSEQ, VMSNE, VMSLTU, VMSLT, VMSLEU, VMSLE, VMSGTU, VMSGT, VFCMP})
+              spatz_req.vd_is_src = 1'b1;
           end
         end
 
