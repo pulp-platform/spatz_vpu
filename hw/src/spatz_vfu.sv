@@ -201,6 +201,23 @@ module spatz_vfu
   // Is this the last request?
   logic last_request;
 
+  // The signals for in-prder FPU issue.
+  // Based on instruction latency the next instruction is stalled.
+  typedef logic [7:0] fpu_lat_t;
+
+  fpu_lat_t fpu_issue_lat;
+  fpu_lat_t fpu_proc_lat_d, fpu_proc_lat_q;
+  logic fpu_proc_div_d, fpu_proc_div_q;
+  spatz_id_t fpu_proc_id_d, fpu_proc_id_q;
+  `FF(fpu_proc_lat_q, fpu_proc_lat_d, '0)
+  `FF(fpu_proc_div_q, fpu_proc_div_d, 1'b0)
+  `FF(fpu_proc_id_q,  fpu_proc_id_d,  '0)
+
+  logic [N_FPU-1:0] fpu_in_pending;
+  logic fpu_inflight;
+
+  logic latency_problem;
+
   // Reduction state
   typedef enum logic [3:0] {
     Reduction_NormalExecution,
@@ -274,6 +291,9 @@ module spatz_vfu
     state_d           = state_q;
     narrowing_upper_d = narrowing_upper_q;
     widening_upper_d  = widening_upper_q;
+    fpu_proc_lat_d = fpu_proc_lat_q;
+    fpu_proc_div_d = fpu_proc_div_q;
+    fpu_proc_id_d  = fpu_proc_id_q;
 
     // We are not stalling
     stall = 1'b0;
@@ -294,6 +314,11 @@ module spatz_vfu
       // Update narrowing information
       narrowing_upper_d = narrowing_upper_q ^ spatz_req.op_arith.is_narrowing;
       widening_upper_d  = widening_upper_q ^ (spatz_req.op_arith.widen_vs1 || spatz_req.op_arith.widen_vs2); // toggle the signal if requires widening
+      if (is_fpu_insn) begin
+        fpu_proc_lat_d = fpu_issue_lat;
+        fpu_proc_div_d = is_divsqrt_insn;
+        fpu_proc_id_d  = spatz_req.id;
+      end    
     end
 
     // Current state of the VFU
@@ -319,6 +344,8 @@ module spatz_vfu
               state_d = VFU_RunningIPU;
               stall   = 1'b1;
             end
+            else if (!divsqrt_shared_active && latency_problem)
+              stall = 1'b1;
         end
         default:;
       endcase
@@ -517,6 +544,11 @@ module spatz_vfu
   logic [N_FU*ELEN-1:0]  fpu_result;
   logic [N_FU*ELENB-1:0] fpu_result_valid;
   logic [N_FU*ELENB-1:0] fpu_in_ready;
+
+  assign fpu_issue_lat = fpu_lat_t'(FPUImplementation.PipeRegs[fpnew_pkg::get_opgroup(fpu_op)][fpu_dst_fmt]);
+  assign latency_problem = fpu_inflight && (spatz_req.id != fpu_proc_id_q) &&
+                           ((fpu_issue_lat < fpu_proc_lat_q) || is_divsqrt_insn || fpu_proc_div_q);
+  assign fpu_inflight = is_fpu_busy || |fpu_in_pending || |fpu_result_valid;
 
   // Valid bytes in current VRF word
   logic [$clog2(MAXVL*8+1)-1:0] remaining_bytes;
@@ -1861,7 +1893,7 @@ assign vfcmp_result_accepted = result_tag.is_cmp && fu_word_complete && result_r
         && !(fpu == 0 && divsqrt_shared_active && divsqrt_inflight_q);
 
       assign fpu_result_ready = (fpu == 0 && divsqrt_shared_active)? divsqrt_shared_ready : result_ready;
-
+      assign fpu_in_pending[fpu] = fpu_in_valid_q;
 
       `FFL(fpu_operand1_q, fpu_operand1, int_fpu_in_valid && int_fpu_in_ready, '0)
       `FFL(fpu_operand2_q, fpu_operand2, int_fpu_in_valid && int_fpu_in_ready, '0)
