@@ -853,7 +853,7 @@ module spatz_controller
   assign vfu_stall   = ~vfu_req_ready_i & (spatz_req.ex_unit == VFU);
   assign vlsu_stall  = ~vlsu_req_ready_i & (spatz_req.ex_unit == LSU);
   // The CSR response has no other backpressure
-  assign csr_stall   = (~rsp_ready_d & (spatz_req.ex_unit == CON)) || (vxsat_access && |running_insn_q);;
+  assign csr_stall   = (~rsp_ready_d & (spatz_req.ex_unit == CON)) || (vxsat_access && |running_insn_q);
 `ifdef VENTAGLIO
   // VSLDU stalls only for true SLD-routed non-VTL ops (the VTL/VSLDU
   // shared-port arbiter routes use_vtl ops through ventaglio instead).

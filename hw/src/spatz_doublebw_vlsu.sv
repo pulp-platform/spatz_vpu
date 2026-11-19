@@ -136,7 +136,7 @@ module spatz_doublebw_vlsu
 
     if (spatz_req_i.op == VLM || spatz_req_i.op == VSM) begin
       spatz_req_d.vl             = (spatz_req_i.vl + 7) >> 3; // ceil(vl/8)
-      spatz_req_d.vstart         = spatz_req_i.vstart; 
+      spatz_req_d.vstart         = spatz_req_i.vstart;
       spatz_req_d.vtype.vsew     = EW_8;
       spatz_req_d.op_mem.vm      = 1'b1; // Force masking off during the load
     end
@@ -145,7 +145,7 @@ module spatz_doublebw_vlsu
 
   // Do we have a unit strided memory access
   logic mem_is_unit_strided;
-  assign mem_is_unit_strided = mem_spatz_req_valid && 
+  assign mem_is_unit_strided = mem_spatz_req_valid &&
                               ((mem_spatz_req.op == VLE) || (mem_spatz_req.op == VSE) ||
                               (mem_spatz_req.op == VLRE) || (mem_spatz_req.op == VSR) ||
                               (mem_spatz_req.op == VLM)  || (mem_spatz_req.op == VSM));
