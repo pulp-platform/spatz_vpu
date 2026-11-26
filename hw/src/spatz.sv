@@ -109,6 +109,9 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     output dca_rsp_t                          dca_rsp_o
   );
 
+// Include FF
+`include "common_cells/registers.svh"
+
   ////////////////
   // Parameters //
   ////////////////
@@ -274,6 +277,7 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
   // Arbitration: the synthesized path has priority over the acc rsp path.
   // When the synthesized path is firing, acc_rsp_ready_top is held low so
   // Spatz stalls its rsp; this avoids the need for a result FIFO.
+  // A synthesized result that x_result does not take waits in synth_pend_q.
   //
   // Commit channel: per cluster spec, the commit channel is assumed always-
   // ready (no ready signal exists). commit_kill is not supported and the
@@ -281,7 +285,10 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
 
   logic synth_result_valid;
   logic combined_issue_valid;
-  logic issue_proceed;
+  logic      synth_pend_d, synth_pend_q;
+  x_result_t synth_pend_result_q;
+  `FF(synth_pend_q, synth_pend_d, 1'b0)
+  `FFL(synth_pend_result_q, x_result_o, synth_result_valid, '0)
 
   always_comb begin
     // --- Issue request (X -> acc) ------------------------------------------
@@ -300,25 +307,41 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
     // acc_issue_req_top.addr is unused: Spatz is the only unit on the iface.
 
     // --- Synthesized X-result for non-writeback instructions ---------------
-    combined_issue_valid = x_issue_valid_i & x_register_valid_i;
+    // Only proceed once every register this instruction might read is
+    // actually valid (Snitch's own scoreboard readiness, sent concurrently
+    // in x_register_i.rs_valid): Snitch's XIF issue does not wait for
+    // operand hazards upstream (it can't know ahead of decode whether a
+    // source register will actually be used), so without this check Spatz
+    // can consume stale/in-flight register data from an instruction still
+    // being written by a prior one (e.g. address computed right before a
+    // vector store reusing the same register).
+    combined_issue_valid = x_issue_valid_i & x_register_valid_i & (&x_register_i.rs_valid);
+    // A pending synthesized result holds the next issue
+    acc_issue_valid_top  = combined_issue_valid & ~synth_pend_q;
     // Gate on acc_issue_ready_top so the synthesized result only fires in the
     // same cycle the issue handshake completes (atomic). Without this gate,
     // synth_result_valid stays high the entire time Snitch is stalled on the
     // issue, which forces acc_rsp_ready_top=0 and deadlocks the FP LSU
     // response path.
-    synth_result_valid   = combined_issue_valid
+    synth_result_valid   = acc_issue_valid_top
                          & acc_issue_rsp_top.accept
                          & ~acc_issue_rsp_top.writeback
                          & acc_issue_ready_top;
 
     // --- Issue handshake ---------------------------------------------------
-    // Writeback instructions: proceed as soon as Spatz is ready.
-    // Non-writeback instructions: also require x_result to be ready, since
-    // the synthesized result must be consumed atomically with the issue.
-    issue_proceed       = acc_issue_rsp_top.writeback | x_result_ready_i;
-    acc_issue_valid_top = combined_issue_valid;
-    x_issue_ready_o     = acc_issue_ready_top & x_register_valid_i & issue_proceed;
-    x_register_ready_o  = acc_issue_ready_top & x_issue_valid_i    & issue_proceed;
+    // Snitch sees the handshake in each cycle that the controller takes the
+    // instruction. The handshake does not wait for x_result_ready_i, because the
+    // core side can make x_result_ready_i depend on x_result_valid_o.
+    // Must also gate ready on rs_valid, not just combined_issue_valid: Snitch
+    // reads x_issue_ready_o/x_register_ready_o to decide whether this
+    // instruction was accepted. Asserting ready while silently not feeding
+    // it to the controller (acc_issue_valid_top=0) would drop it entirely
+    // instead of leaving it re-presented (with fresher register data) next
+    // cycle.
+    x_issue_ready_o     = acc_issue_ready_top & x_register_valid_i & ~synth_pend_q
+                        & (&x_register_i.rs_valid);
+    x_register_ready_o  = acc_issue_ready_top & x_issue_valid_i    & ~synth_pend_q
+                        & (&x_register_i.rs_valid);
 
     // --- Issue response ----------------------------------------------------
     x_issue_resp_o               = '0;
@@ -328,7 +351,9 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
 
     // --- Result mux (synthesized path has priority) ------------------------
     x_result_o        = '0;
-    if (synth_result_valid) begin
+    if (synth_pend_q) begin
+      x_result_o      = synth_pend_result_q;
+    end else if (synth_result_valid) begin
       x_result_o.id   = x_issue_req_i.id;
       x_result_o.rd   = x_issue_req_i.instr[11:7];
       x_result_o.we   = 1'b0;
@@ -339,10 +364,12 @@ module spatz import spatz_pkg::*; import rvv_pkg::*; import fpnew_pkg::*; import
       x_result_o.we   = 1'b1;
       x_result_o.data = acc_rsp_top.data;
     end
-    x_result_valid_o  = synth_result_valid | acc_rsp_valid_top;
+    x_result_valid_o  = synth_pend_q | synth_result_valid | acc_rsp_valid_top;
 
     // Hold back Spatz's rsp when the synthesized path is firing.
-    acc_rsp_ready_top = x_result_ready_i & ~synth_result_valid;
+    acc_rsp_ready_top = x_result_ready_i & ~synth_pend_q & ~synth_result_valid;
+
+    synth_pend_d      = (synth_pend_q | synth_result_valid) & ~x_result_ready_i;
   end
 
   // Commit channel intentionally unused (no kill, no ready in this variant).

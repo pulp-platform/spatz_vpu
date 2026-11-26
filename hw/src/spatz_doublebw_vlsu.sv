@@ -886,9 +886,9 @@ module spatz_doublebw_vlsu
   // Ack when the vector store finishes, or when the vector load commits to the VRF.
   // With more than an interface, we need to wait until all the interfaces commit to the VRF.
 
-  // Check if interface 1 is the interface trying to commit, if so take resp information from interface 1
-  // If both interfaces in sync, interface 1 is given priority
-  assign resp_intf = vrf_valid_rsp[1];
+  // Take the response from the interface writing its final word now: an interface that
+  // committed earlier and is waiting has already cleared its buffer, and with it the id
+  assign resp_intf = vrf_valid_rsp[1] & vrf_wvalid_i[1] & !vrf_commit_bypass;
 
   // Check is both interfaces has reached to a completion and if the last write to the VRF is also done
   // Assign the instruction id from the interface that completes the last
@@ -1267,7 +1267,9 @@ module spatz_doublebw_vlsu
       // Propagate request ID
       vrf_req_d[intf].rsp.id    = commit_insn_q.id;
       vrf_req_d[intf].rsp.intf_id = intf;
-      vrf_req_d[intf].rsp_valid = commit_insn_valid && &commit_finished_d[intf] && mem_insn_finished_d[commit_insn_q.id];
+      // Final once this interface committed its share: the other interface may still be issuing
+      // loads, and the response to the controller waits for both interfaces anyway
+      vrf_req_d[intf].rsp_valid = commit_insn_valid && &commit_finished_d[intf];
       vrf_req_d[intf].commit_vl = commit_insn_q.vl;
 
       // Request indexes
@@ -1375,7 +1377,8 @@ module spatz_doublebw_vlsu
 `endif
           if (!rob_full[intf][fu] && !offset_queue_full[intf][fu] && mem_operation_valid[intf][fu]) begin
             rob_req_id[intf][fu]     = spatz_mem_req_ready[intf][fu] & spatz_mem_req_valid[intf][fu];
-            mem_req_lvalid[intf][fu] = (!mem_is_indexed || mem_idx_word_ok[intf][fu]) && mem_spatz_req.op_mem.is_load;
+            // Hold loads until RunningLoad: rob_push drops a response that returns while still in RunningStore
+            mem_req_lvalid[intf][fu] = (!mem_is_indexed || mem_idx_word_ok[intf][fu]) && mem_spatz_req.op_mem.is_load && state_q == VLSU_RunningLoad;
             mem_req_id[intf][fu]     = rob_id[intf][fu];
             mem_req_last[intf][fu]   = mem_operation_last[intf][fu];
           end
