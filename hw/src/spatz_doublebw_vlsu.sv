@@ -131,7 +131,6 @@ module spatz_doublebw_vlsu
       spatz_req_d.vl             = (VLEN / 8) << spatz_req_i.vtype.vlmul[1:0];
       spatz_req_d.vtype.vsew     = EW_8;
       spatz_req_d.op_mem.vm      = 1'b1;
-      spatz_req_d.vstart         = spatz_req_i.vstart;
     end
 
     if (spatz_req_i.op == VLM || spatz_req_i.op == VSM) begin
@@ -140,6 +139,12 @@ module spatz_doublebw_vlsu
       spatz_req_d.vtype.vsew     = EW_8;
       spatz_req_d.op_mem.vm      = 1'b1; // Force masking off during the load
     end
+
+  // vstart >= effective length -> no element is accessed (RVV no-op).
+  // Clamping vstart to vl makes every port/FU counter start at its max,
+  // so mem_port_finished / commit_finished are true immediately.
+  if (spatz_req_d.vstart > spatz_req_d.vl)
+    spatz_req_d.vstart = spatz_req_d.vl;
 
   end: proc_spatz_req
 
@@ -931,12 +936,18 @@ module spatz_doublebw_vlsu
   // Force a commit when the next pending write targets a different VRF word address.
   logic [NrInterfaces-1:0] next_addr_different;
 
+  // Interface 0 has no (more) writes for the current instruction:
+  // nothing to do (vstart beyond its share) or its final write already went out
+  logic intf0_done;
+
   // Both interfaces must be ready before either commits (normal path). This
   // prevents the faster interface from draining its buffer while the slower
   // one is still accumulating, which would leave the slower interface with
   // rsp_valid data it can never flush (no &coalesce_valid_q, no vrf_wvalid_i[0]).
   logic both_commit;
   assign both_commit = coalesce_commit[0] & coalesce_commit[1];
+
+  assign intf0_done = commit_insn_valid && ((commit_local_vstart[0] >= commit_local_vl[0]) || vrf_commit_waiting_q[0]);
 
   for (genvar intf = 0; intf < NrInterfaces; intf++) begin : gen_vrf_req_register_intf
     spill_register #(
@@ -977,8 +988,8 @@ module spatz_doublebw_vlsu
     // before either fires, so no interface drains ahead of the other.
     // Bypass path (intf 0 only): interface 1 has nothing to write (small vl).
     assign vrf_we_o[intf] = (both_commit |
-                             ((intf==0) ? coalesce_commit[0] & (vrf_commit_bypass | vrf_commit_waiting_q[1]) & vlsu_buf_empty_i : 1'b0)) &
-                            ((intf==1) ? (vrf_wvalid_i[0] & (coalesce_q[1].rsp.id == coalesce_q[0].rsp.id)) : 1'b1) &
+                             ((intf==0) ? coalesce_commit[0] & (vrf_commit_bypass | vrf_commit_waiting_q[1]) & vlsu_buf_empty_i : coalesce_commit[1] & intf0_done)) &
+                            ((intf==1) ? (intf0_done | (vrf_wvalid_i[0] & (coalesce_q[1].rsp.id == coalesce_q[0].rsp.id))) : 1'b1) &
                             !vlsu_buf_full_i;
     assign vrf_id_o[intf] = {coalesce_q[intf].rsp.id, (state_q == VLSU_ReadingV0_t) ? commit_insn_q.id : mem_spatz_req.id, commit_insn_q.id};
     // The spill register may be popped when the coalescing buffer can accept:
@@ -1041,7 +1052,9 @@ module spatz_doublebw_vlsu
       vrf_valid_rsp[intf] = (coalesce_valid_q[intf] & coalesce_q[intf].rsp_valid & coalesce_commit[intf]);
 
       // Track if the final resp has already been written to the VRF
-      vrf_commit_intf_valid[intf] = ((vrf_valid_rsp[intf] & vrf_wvalid_i[intf]) | vrf_commit_waiting_q[intf]) | (intf == 1 ? vrf_commit_bypass : 1'b0);
+      vrf_commit_intf_valid[intf] = ((vrf_valid_rsp[intf] & vrf_wvalid_i[intf]) | vrf_commit_waiting_q[intf])
+                                    | (intf == 1 ? vrf_commit_bypass : 1'b0)
+                                    | (intf == 0 ? (commit_insn_valid && commit_local_vstart[0] >= commit_local_vl[0]) : 1'b0);
 
       // To track if the last packet has already been committed for the interface, but a response cannot be sent to the controller
       // since waiting for the other interface to finish
@@ -1068,7 +1081,8 @@ module spatz_doublebw_vlsu
   // Check if both the interfaces have completed request and have a valid response to send
   // Check if atleast one interface has a valid (interfaces can send responses asynchronously to the VRF)
   // Set response high when both interfaces have committed and the VRF accepts the final write
-  assign vlsu_rsp_valid_o = &vrf_commit_intf_valid && |coalesce_valid_q ? |vrf_wvalid_i : vlsu_finished_req && ( (commit_insn_q.is_load && commit_insn_q.vl == '0) || (!commit_insn_q.is_load && commit_insn_q.vl != '0) );
+  assign vlsu_rsp_valid_o = &vrf_commit_intf_valid && |coalesce_valid_q ? |vrf_wvalid_i : vlsu_finished_req && ( (commit_insn_q.is_load && (commit_insn_q.vl == '0 || commit_insn_q.vstart == commit_insn_q.vl))
+                          || (!commit_insn_q.is_load && commit_insn_q.vl != '0) );
 
 `ifndef TARGET_SYNTHESIS
 `ifdef TRACE
@@ -1151,12 +1165,12 @@ module spatz_doublebw_vlsu
   assign commit_insn_start = commit_insn_valid && !busy_q;
 
   // Do we need to catch up to reach element idx parity? (Because of non-zero vstart)
-  vlen_t vreg_start_0;
-  assign vreg_start_0 = vlen_t'(commit_insn_q.vstart[$clog2(ELENB)-1:0]);
+  vlen_t [NrInterfaces-1:0] vreg_start_0;
   logic [NrInterfaces-1:0] [N_FU-1:0] catchup;
   for (genvar intf = 0; intf < NrInterfaces; intf++) begin: gen_catchup_intf
+    assign vreg_start_0[intf] = vlen_t'(commit_local_vstart[intf][$clog2(ELENB)-1:0]);
     for (genvar fu = 0; fu < N_FU; fu++) begin: gen_catchup_intf_fu
-      assign catchup[intf][fu] = (active_commit_counter[intf][fu] < vreg_start_0) & (commit_counter_max[intf][fu] != active_commit_counter[intf][fu]);
+      assign catchup[intf][fu] = (active_commit_counter[intf][fu] < vreg_start_0[intf]) & (commit_counter_max[intf][fu] != active_commit_counter[intf][fu]);
     end: gen_catchup_intf_fu
   end: gen_catchup_intf
 
@@ -1166,17 +1180,12 @@ module spatz_doublebw_vlsu
 
       // The total amount of vector bytes we have to work through
       vlen_t max_bytes;
+      logic same_row;
 
       always_comb begin
 
         if (commit_insn_q.is_ordered) begin
-          if (intf == 0 && fu == 0) begin
-            max_bytes = commit_insn_q.vl;
-            commit_counter_en[intf][fu] = commit_operation_valid[intf][fu] && (commit_insn_q.is_load && vrf_req_valid_d[intf] && vrf_req_ready_d[intf]) || (!commit_insn_q.is_load && vrf_rvalid_i[intf][0] && vrf_re_o[intf][0] && (!mem_is_indexed || idx_valid[intf]));
-          end else begin
-            max_bytes = '0;
-            commit_counter_en[intf][fu] = 1'b0;
-          end
+          max_bytes = (intf == 0 && fu == 0) ? commit_insn_q.vl : '0;
         end else begin
           max_bytes = (commit_local_vl[intf] >> $clog2(N_FU*ELENB)) << $clog2(ELENB);
           if (commit_local_vl[intf][$clog2(ELENB) +: $clog2(N_FU)] > fu)
@@ -1187,6 +1196,23 @@ module spatz_doublebw_vlsu
           commit_counter_en[intf][fu] = commit_operation_valid[intf][fu] && (commit_insn_q.is_load && vrf_req_valid_d[intf] && vrf_req_ready_d[intf]) || (!commit_insn_q.is_load && vrf_rvalid_i[intf][0] && vrf_re_o[intf][0] && (!mem_is_indexed || idx_valid[intf]));
         end
 
+        // Only FUs whose next element lies in the VRF row being written may commit.
+        // With vstart in FU k > 0, FUs 0..k-1 start one row ahead and must wait
+        // until the row reference (FU N_FU-1) reaches them.
+        same_row = commit_insn_q.is_ordered || ((active_commit_counter[intf][fu] >> $clog2(ELENB)) == vlen_t'(vd_elem_id[intf]));
+
+        commit_operation_valid[intf][fu] = (state_q == VLSU_RunningLoad || state_q == VLSU_RunningStore) && commit_insn_valid && !commit_insn_start && (active_commit_counter[intf][fu] != max_bytes) && (catchup[intf][fu] || (!catchup[intf][fu] && ~|catchup[intf])) && same_row;
+        commit_operation_last[intf][fu]  = commit_operation_valid[intf][fu] && ((max_bytes - active_commit_counter[intf][fu]) <= (commit_is_single_element_operation ? commit_single_element_size : ELENB));
+        commit_counter_delta[intf][fu]   = !commit_operation_valid[intf][fu] ? vlen_t'('d0) : commit_is_single_element_operation ? vlen_t'(commit_single_element_size) : commit_operation_last[intf][fu] ? (max_bytes - active_commit_counter[intf][fu]) : vlen_t'(ELENB);
+        commit_counter_max[intf][fu]     = max_bytes;
+
+        if (commit_insn_q.is_ordered && (intf != 0 || fu != 0))
+          commit_counter_en[intf][fu] = 1'b0;
+        else
+          commit_counter_en[intf][fu] = commit_operation_valid[intf][fu] &&
+                                  ((commit_insn_q.is_load && vrf_req_valid_d[intf] && vrf_req_ready_d[intf]) ||
+                                  (!commit_insn_q.is_load && vrf_rvalid_i[intf][0] && vrf_re_o[intf][0] && (!mem_is_indexed || idx_valid[intf])));
+
         // reset commit counter for the next segment
         commit_counter_load[intf][fu] = commit_insn_start || seg_completed;
         commit_counter_d[intf][fu] = (commit_local_vstart[intf] >> $clog2(N_FU*ELENB)) << $clog2(ELENB);
@@ -1194,10 +1220,6 @@ module spatz_doublebw_vlsu
           commit_counter_d[intf][fu] += ELENB;
         else if (commit_local_vstart[intf][$clog2(ELENB) +: $clog2(N_FU)] == fu)
           commit_counter_d[intf][fu] += commit_local_vstart[intf][$clog2(ELENB)-1:0];
-        commit_operation_valid[intf][fu] = (state_q == VLSU_RunningLoad || state_q == VLSU_RunningStore) && commit_insn_valid && !commit_insn_start && (active_commit_counter[intf][fu] != max_bytes) && (catchup[intf][fu] || (!catchup[intf][fu] && ~|catchup));
-        commit_operation_last[intf][fu]  = commit_operation_valid[intf][fu] && ((max_bytes - active_commit_counter[intf][fu]) <= (commit_is_single_element_operation ? commit_single_element_size : ELENB));
-        commit_counter_delta[intf][fu]   = !commit_operation_valid[intf][fu] ? vlen_t'('d0) : commit_is_single_element_operation ? vlen_t'(commit_single_element_size) : commit_operation_last[intf][fu] ? (max_bytes - active_commit_counter[intf][fu]) : vlen_t'(ELENB);
-        commit_counter_max[intf][fu]     = max_bytes;
       end
     end
   end
@@ -1212,6 +1234,9 @@ module spatz_doublebw_vlsu
 
       // The total amount of vector bytes we have to work through
       vlen_t max_bytes, max_idx_bytes;
+      vlen_t [NrInterfaces-1:0] mem_local_vstart;
+      assign mem_local_vstart[0] = (mem_spatz_req.vstart < mem_split_bytes) ? mem_spatz_req.vstart : mem_split_bytes;
+      assign mem_local_vstart[1] = (mem_spatz_req.vstart < mem_split_bytes) ? vlen_t'('0)          : mem_spatz_req.vstart - mem_split_bytes;
 
       always_comb begin
 
@@ -1240,14 +1265,13 @@ module spatz_doublebw_vlsu
         mem_operation_last[intf][fu]  = mem_operation_valid[intf][fu] && ((max_bytes - active_mem_counter[intf][fu]) <= (mem_is_single_element_operation ? mem_single_element_size : MemDataWidthB));
         // reset mem counter for the next segment
         mem_counter_load[intf][fu]    = mem_insn_start || seg_completed;
-        mem_counter_d[intf][fu]       = (mem_spatz_req.vstart >> $clog2(NrMemPorts*MemDataWidthB)) << $clog2(MemDataWidthB);
-        if (NrMemPorts == 1)
-          mem_counter_d[intf][fu] = mem_spatz_req.vstart;
-        else
-          if (mem_spatz_req.vstart[$clog2(MemDataWidthB) +: $clog2(NrMemPorts)] > port)
-            mem_counter_d[intf][fu] += MemDataWidthB;
-          else if (mem_spatz_req.vstart[$clog2(MemDataWidthB) +: $clog2(NrMemPorts)] == port)
-            mem_counter_d[intf][fu] += mem_spatz_req.vstart[$clog2(MemDataWidthB)-1:0];
+        mem_counter_d[intf][fu] = (mem_local_vstart[intf] >> $clog2(N_FU*MemDataWidthB)) << $clog2(MemDataWidthB);
+        if (N_FU == 1)
+          mem_counter_d[intf][fu] = mem_local_vstart[intf];
+        else if (mem_local_vstart[intf][$clog2(MemDataWidthB) +: $clog2(N_FU)] > fu)
+          mem_counter_d[intf][fu] += MemDataWidthB;
+        else if (mem_local_vstart[intf][$clog2(MemDataWidthB) +: $clog2(N_FU)] == fu)
+          mem_counter_d[intf][fu] += mem_local_vstart[intf][$clog2(MemDataWidthB)-1:0];
 
         // Stall the counter on Phase 0 of a boundary-crossing element
         if (mem_crosses_boundary[intf][fu] && split_phase_q[intf][fu] == 1'b0) begin
@@ -1496,11 +1520,17 @@ module spatz_doublebw_vlsu
       // Propagate request ID
       vrf_req_d[intf].rsp.id    = commit_insn_q.id;
       vrf_req_d[intf].rsp.intf_id = intf;
-      // response is valid only on the last segment commit
+      // Loads: an interface's last VRF write is "last" as soon as all of its own FUs
+      // have committed. Waiting for the whole instruction's memory side
+      // (both interfaces) can deadlock when the other interface is held back by the
+      // paired-write rule (e.g. vstart in interface 0's last row).
       if (commit_is_segmented)
-        vrf_req_d[intf].rsp_valid = commit_insn_valid && &commit_finished_d[intf] && mem_insn_finished_d[commit_insn_q.id] && (seg_cnt_q == (commit_seg_nf[2:0] - 3'd1));
+        vrf_req_d[intf].rsp_valid = commit_insn_valid && &commit_finished_d[intf]
+                                    && (commit_insn_q.is_load || mem_insn_finished_d[commit_insn_q.id])
+                                    && (seg_cnt_q == (commit_seg_nf[2:0] - 3'd1));
       else
-        vrf_req_d[intf].rsp_valid = commit_insn_valid && &commit_finished_d[intf] && mem_insn_finished_d[commit_insn_q.id];
+        vrf_req_d[intf].rsp_valid = commit_insn_valid && &commit_finished_d[intf]
+                                    && (commit_insn_q.is_load || mem_insn_finished_d[commit_insn_q.id]);
       vrf_req_d[intf].commit_vl = commit_insn_q.vl;
 
       // Request indexes
@@ -1661,7 +1691,7 @@ module spatz_doublebw_vlsu
             end
 
             rob_wid[intf][fu]    = rob_id[intf][fu];
-            rob_req_id[intf][fu] = vrf_rvalid_i[intf][0] && (!mem_is_indexed || idx_valid[intf]);
+            rob_req_id[intf][fu] = vrf_rvalid_i[intf][0] && (!mem_is_indexed || idx_valid[intf]) && commit_operation_valid[intf][fu];
             rob_push[intf][fu]   = rob_req_id[intf][fu] && (!commit_insn_q.is_ordered || (intf == 0 && fu == 0));
           end
         end

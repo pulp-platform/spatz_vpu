@@ -129,7 +129,6 @@ module spatz_vlsu
       spatz_req_d.vl             = (VLEN / 8) << spatz_req_i.vtype.vlmul[1:0];
       spatz_req_d.vtype.vsew     = EW_8;
       spatz_req_d.op_mem.vm      = 1'b1;
-      spatz_req_d.vstart         = spatz_req_i.vstart;
     end
 
     if (spatz_req_i.op == VLM || spatz_req_i.op == VSM) begin
@@ -154,6 +153,12 @@ module spatz_vlsu
       endcase
     end
 `endif
+  // vstart >= effective length -> no element is accessed (RVV no-op).
+  // Clamping vstart to vl makes every port/FU counter start at its max,
+  // so mem_port_finished / commit_finished are true immediately.
+  if (spatz_req_d.vstart > spatz_req_d.vl)
+    spatz_req_d.vstart = spatz_req_d.vl;
+
   end: proc_spatz_req
 
   // Only do the judgement when we have a valid instruction
@@ -887,7 +892,8 @@ module spatz_vlsu
 
   // Ack when the vector store finishes, or when the load's coalesced write commits to the VRF
   assign vlsu_rsp_o       = coalesce_q.rsp_valid && coalesce_commit ? coalesce_q.rsp : '{id: commit_insn_q.id, default: '0};
-  assign vlsu_rsp_valid_o = coalesce_q.rsp_valid && coalesce_commit ? vrf_wvalid_i : vlsu_finished_req && ( (commit_insn_q.is_load && commit_insn_q.vl == '0) || (!commit_insn_q.is_load && commit_insn_q.vl != '0) );
+  assign vlsu_rsp_valid_o = coalesce_q.rsp_valid && coalesce_commit ? vrf_wvalid_i : vlsu_finished_req && ( (commit_insn_q.is_load && (commit_insn_q.vl == '0 || commit_insn_q.vstart == commit_insn_q.vl))
+                          || (!commit_insn_q.is_load && commit_insn_q.vl != '0) );
 
   always_comb begin : coalesce_proc
     coalesce_d       = coalesce_q;
@@ -1014,29 +1020,38 @@ module spatz_vlsu
   for (genvar fu = 0; fu < N_FU; fu++) begin: gen_vreg_counter_proc
     // The total amount of elements we have to work through
     vlen_t max_elements;
+    logic same_row;
 
     always_comb begin
 
       if (commit_insn_q.is_ordered) begin
-        // Port/FU 0 handles all elements sequentially; other FUs handle 0
-        if (fu == 0) begin
-          max_elements = commit_insn_q.vl;
-          commit_counter_en[fu] = commit_operation_valid[fu] && (commit_insn_q.is_load && vrf_req_valid_d && vrf_req_ready_d) || (!commit_insn_q.is_load && vrf_rvalid_i[0] && vrf_re_o[0] && (!mem_is_indexed || vrf_rvalid_i[1]));
-        end else begin
-          max_elements = '0;
-          commit_counter_en[fu] = 1'b0;
-        end
+         max_elements = (fu == 0) ? commit_insn_q.vl : '0;
       end else begin
         // Default value
         max_elements = (commit_insn_q.vl >> $clog2(N_FU*ELENB)) << $clog2(ELENB);
-        commit_counter_en[fu]      = commit_operation_valid[fu] && (commit_insn_q.is_load && vrf_req_valid_d && vrf_req_ready_d) || (!commit_insn_q.is_load && vrf_rvalid_i[0] && vrf_re_o[0] && (!mem_is_indexed || vrf_rvalid_i[1]));
-
         // Full transfer
         if (commit_insn_q.vl[$clog2(ELENB) +: $clog2(N_FU)] > fu)
           max_elements += ELENB;
         else if (commit_insn_q.vl[$clog2(N_FU*ELENB)-1:$clog2(ELENB)] == fu)
           max_elements += commit_insn_q.vl[$clog2(ELENB)-1:0];
       end
+
+      // Only FUs whose next element lies in the VRF row being written may commit.
+      // With vstart in FU k > 0, FUs 0..k-1 start one row ahead and must wait
+      // until the row reference (FU N_FU-1) reaches them.
+      same_row = commit_insn_q.is_ordered || ((active_commit_counter[fu] >> $clog2(ELENB)) == vlen_t'(vd_elem_id));
+
+      commit_operation_valid[fu] = (state_q == VLSU_RunningLoad || state_q == VLSU_RunningStore) && commit_insn_valid && !commit_insn_start && (active_commit_counter[fu] != max_elements) && (catchup[fu] || (!catchup[fu] && ~|catchup)) && same_row;
+      commit_operation_last[fu]  = commit_operation_valid[fu] && ((max_elements - active_commit_counter[fu]) <= (commit_is_single_element_operation ? commit_single_element_size : ELENB));
+      commit_counter_delta[fu]   = !commit_operation_valid[fu] ? vlen_t'('d0) : commit_is_single_element_operation ? vlen_t'(commit_single_element_size) : commit_operation_last[fu] ? (max_elements - active_commit_counter[fu]) : vlen_t'(ELENB);
+      commit_counter_max[fu]     = max_elements;
+
+      if (commit_insn_q.is_ordered && fu != 0)
+        commit_counter_en[fu] = 1'b0;
+      else
+        commit_counter_en[fu] = commit_operation_valid[fu] &&
+                                ((commit_insn_q.is_load && vrf_req_valid_d && vrf_req_ready_d) ||
+                                (!commit_insn_q.is_load && vrf_rvalid_i[0] && vrf_re_o[0] && (!mem_is_indexed || vrf_rvalid_i[1])));
 
       // reset commit counter for the next segment
       commit_counter_load[fu] = commit_insn_start || seg_completed;
@@ -1045,10 +1060,6 @@ module spatz_vlsu
         commit_counter_d[fu] += ELENB;
       else if (commit_insn_q.vstart[idx_width(N_FU*ELENB)-1:$clog2(ELENB)] == fu)
         commit_counter_d[fu] += commit_insn_q.vstart[$clog2(ELENB)-1:0];
-      commit_operation_valid[fu] = (state_q == VLSU_RunningLoad || state_q == VLSU_RunningStore) && commit_insn_valid && !commit_insn_start && (active_commit_counter[fu] != max_elements) && (catchup[fu] || (!catchup[fu] && ~|catchup));
-      commit_operation_last[fu]  = commit_operation_valid[fu] && ((max_elements - active_commit_counter[fu]) <= (commit_is_single_element_operation ? commit_single_element_size : ELENB));
-      commit_counter_delta[fu]   = !commit_operation_valid[fu] ? vlen_t'('d0) : commit_is_single_element_operation ? vlen_t'(commit_single_element_size) : commit_operation_last[fu] ? (max_elements - active_commit_counter[fu]) : vlen_t'(ELENB);
-      commit_counter_max[fu]     = max_elements;
     end
   end
 
@@ -1472,17 +1483,6 @@ module spatz_vlsu
     // Store operation
     end else begin
       // Read new element from the register file and store it to the buffer
-      if (state_q == VLSU_RunningStore && !(|rob_full) && |commit_operation_valid) begin
-        vrf_re_o[0] = 1'b1;
-
-        for (int unsigned port = 0; port < NrMemPorts; port++) begin
-          rob_wdata[port]  = vrf_rdata_i[0][ELEN*port +: ELEN];
-          rob_wid[port]    = rob_id[port];
-          rob_req_id[port] = vrf_rvalid_i[0] && (!mem_is_indexed || vrf_rvalid_i[1]);
-          rob_push[port]   = rob_req_id[port];
-        end
-      end
-
       for (int unsigned port = 0; port < NrMemPorts; port++) begin
         vm_strb[port] = vm_wbe_store[port];
 
@@ -1498,8 +1498,9 @@ module spatz_vlsu
           end
 
           rob_wid[port]    = rob_id[port];
-          rob_req_id[port] = vrf_rvalid_i[0] && (!mem_is_indexed || vrf_rvalid_i[1]);
-          // Prevent unused ROBs from filling up and causing a deadlock
+          // Only FUs that are actually committing on this VRF read take an entry;
+          // FUs held back by catch-up or same_row must not receive the word
+          rob_req_id[port] = vrf_rvalid_i[0] && (!mem_is_indexed || vrf_rvalid_i[1]) && commit_operation_valid[port];
           rob_push[port]   = rob_req_id[port] && (!commit_insn_q.is_ordered || port == 0);
         end
 

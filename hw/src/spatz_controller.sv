@@ -296,7 +296,9 @@ module spatz_controller
   // vl != 0 as seen by the issue guards, independent of spatz_req_valid:
   // in every branch of ex_issue the issued vl is zero only if vl_q is zero (scalar ops force vl = 1)
   logic issue_vl_nz;
-  assign issue_vl_nz = (vl_q != '0) || (buffer_spatz_req.op_arith.is_scalar && (buffer_spatz_req.ex_unit inside {VFU, SLD}));
+  assign issue_vl_nz = (vl_q != '0) ||
+                       (buffer_spatz_req.op_arith.is_scalar && (buffer_spatz_req.ex_unit inside {VFU, SLD})) ||
+                       (buffer_spatz_req.ex_unit == LSU && buffer_spatz_req.op inside {VLRE, VSR});
 
   // LSU ops whose EMUL is LMUL itself rather than (EEW/SEW)*LMUL:
   // indexed loads/stores (data EMUL = LMUL) and whole-register ops (EMUL = NREG, carried in vlmul)
@@ -778,7 +780,7 @@ module spatz_controller
       seg_writer_d[spatz_req.id] = spatz_req.ex_unit == LSU && spatz_req.op_mem.is_load && (nf_fields > 1);
 
       // Is this a risky instruction which should not chain?
-      if (spatz_req.op inside {VSLIDEUP, VSLIDEDOWN, VLSE, VLSEG, VLXE, VSSE, VSSEG, VSXE})
+      if (spatz_req.op inside {VSLIDEUP, VSLIDEDOWN, VLSE, VLSEG, VLXE, VSSE, VSSEG, VSXE} || (vstart_q != '0))
         scoreboard_d[spatz_req.id].prevent_chaining = 1'b1;
 
       // Is this a narrowing or widening instruction?
@@ -1027,7 +1029,7 @@ module spatz_controller
           end
         end
         LSU: begin
-          if (vtype_q.vill) begin
+          if (vtype_q.vill && !(decoder_rsp.spatz_req.op inside {VLRE, VSR})) begin
             issue_rsp_o.accept = 1'b0;
             issue_rsp_o.exception = 1'b1;
           end else begin

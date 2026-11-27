@@ -78,6 +78,8 @@ module spatz_vfu
     logic is_merge;
     // valid bytes in this VRF word
     logic [$clog2(VRFWordBWidth+1)-1:0] valid_bytes;
+    // vmv.x.s: sign-extend the scalar result from SEW to ELEN
+    logic is_int_scalar_move;
   } vfu_tag_t;
 
   logic [N_FPU-1:0] fpu_load_ready;
@@ -811,10 +813,10 @@ module spatz_vfu
 
   always_comb begin : proc_scalar_result
     scalar_result = '0;
-    if (spatz_req.op_arith.is_scalar || result_tag.last) begin
+    if (result_tag.wb || result_tag.last) begin
       scalar_result = result[ELEN-1:0];
-      if (spatz_req.op_arith.is_int_scalar_move) begin
-        unique case (spatz_req.vtype.vsew)
+      if (result_tag.is_int_scalar_move) begin
+        unique case (result_tag.vsew)
           EW_8:    scalar_result = elen_t'($signed(result[7:0]));
           EW_16:   scalar_result = elen_t'($signed(result[15:0]));
           EW_32:   scalar_result = elen_t'($signed(result[31:0]));
@@ -1420,7 +1422,8 @@ module spatz_vfu
       vm             : spatz_req.op_arith.vm,
       vma            : spatz_req.vtype.vma,
       is_merge       : ((spatz_req.op == VMERGE) || (spatz_req.op == VFMERGE)),
-      valid_bytes    : valid_bytes_wr // count of the number of valid bytes in the VRF word (write side)
+      valid_bytes    : valid_bytes_wr, // count of the number of valid bytes in the VRF word (write side)
+      is_int_scalar_move: spatz_req.op_arith.is_int_scalar_move
     };
 
     case(operand_state_q)
