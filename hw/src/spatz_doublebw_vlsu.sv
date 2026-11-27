@@ -399,7 +399,8 @@ module spatz_doublebw_vlsu
     end
 
     // Did an instruction finished its requests?
-    if (&(mem_port_finished_q | (mem_port_finished_d & mem_counter_en)) & !write_pending) begin
+    if (&(mem_port_finished_q | (mem_port_finished_d & mem_counter_en)) & !write_pending &
+        (mem_insn_pending_q[mem_spatz_req.id] | commit_insn_push)) begin
       mem_insn_finished_d[mem_spatz_req.id] = 1'b1;
       mem_spatz_req_ready                   = 1'b1;
     end
